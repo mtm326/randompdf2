@@ -472,8 +472,10 @@
   .wall-grid {
     position: absolute; inset: 0;
     display: grid;
+    grid-auto-rows: 1fr;
     gap: 3px;
     padding: 3px;
+    padding-top: max(92px, calc(env(safe-area-inset-top) + 80px));
   }
   .wall-tile {
     position: relative;
@@ -805,6 +807,9 @@
 <div class="wall" id="wall">
   <div class="wall-grid" id="wall-grid"></div>
   <div class="wall-topbar">
+    <button class="wall-btn" id="wall-reshuffle" aria-label="ランダムに選び直す">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 13.66-5.66M20 12a8 8 0 0 1-13.66 5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
     <button class="wall-btn" id="wall-pause" aria-label="一時停止">
       <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
     </button>
@@ -854,7 +859,7 @@
   // IndexedDB helpers
   // ---------------------------------------------------------------
   var DB_NAME = "coverFlipDB";
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var dbPromise = null;
 
   // iOS home-screen web apps have a known quirk: right after a cold launch
@@ -874,6 +879,12 @@
         }
         if (!db.objectStoreNames.contains("settings")) {
           db.createObjectStore("settings", { keyPath: "key" });
+        }
+        if (!db.objectStoreNames.contains("pdfdata")) {
+          // Holds the actual PDF file bytes (as a Blob), keyed by the same
+          // id as the matching "covers" record, so the PDF can be reopened
+          // after a fresh launch without re-selecting the folder.
+          db.createObjectStore("pdfdata", { keyPath: "id" });
         }
       };
       req.onsuccess = function () { resolve(req.result); };
@@ -934,6 +945,17 @@
         var tx = db.transaction(storeName, "readonly");
         var store = tx.objectStore(storeName);
         var req = store.getAll();
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  }
+
+  function idbGet(storeName, key) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(storeName, "readonly");
+        var req = tx.objectStore(storeName).get(key);
         req.onsuccess = function () { resolve(req.result); };
         req.onerror = function () { reject(req.error); };
       });
@@ -1081,8 +1103,10 @@
 
   function removeCover(id) {
     covers = covers.filter(function (c) { return c.id !== id; });
+    sessionPdfCache.delete(id);
     renderLibrary();
     idbDelete("covers", id);
+    idbDelete("pdfdata", id);
   }
 
   // ---------------------------------------------------------------
@@ -1136,6 +1160,16 @@
   // AND refreshes in-memory access to any that already are -- so re-picking
   // the same folder later in the session is exactly how you "unlock"
   // viewing again without creating duplicate entries.
+  // Persists the actual PDF bytes (as a Blob) so the file can be reopened
+  // after a fresh launch without the user re-selecting its folder. A quota
+  // or other storage failure here is non-fatal: the cover thumbnail is
+  // already saved, so the file just falls back to needing a reselect.
+  function persistPdfBlob(id, file) {
+    return idbPut("pdfdata", { id: id, blob: file }).catch(function (err) {
+      console.error("PDF本体の保存に失敗しました(表紙は保存済みです)", id, err);
+    });
+  }
+
   function handleFiles(fileList) {
     var files = Array.prototype.slice.call(fileList).filter(function (f) {
       return f.type === "application/pdf" || /\.pdf$/i.test(f.name);
@@ -1150,6 +1184,7 @@
       var existing = existingByName[fileBaseName(f.name)];
       if (existing) {
         sessionPdfCache.set(existing.id, f);
+        persistPdfBlob(existing.id, f);
       } else {
         toAdd.push(f);
       }
@@ -1181,9 +1216,11 @@
           var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now() };
           return idbPut("covers", record).then(function (newId) {
             sessionPdfCache.set(newId, file);
-            done++;
-            processingText.textContent = "取り込み中… (" + done + " / " + total + ")";
-            advance(i + 1);
+            return persistPdfBlob(newId, file).then(function () {
+              done++;
+              processingText.textContent = "取り込み中… (" + done + " / " + total + ")";
+              advance(i + 1);
+            });
           });
         })
         .catch(function (err) {
@@ -1241,6 +1278,7 @@
   // ---------------------------------------------------------------
   var wall = $("wall");
   var wallGrid = $("wall-grid");
+  var wallReshuffleBtn = $("wall-reshuffle");
   var wallPauseBtn = $("wall-pause");
   var wallCloseBtn = $("wall-close");
   var wallHint = $("wall-hint");
@@ -1380,6 +1418,7 @@
     }
   }
 
+  wallReshuffleBtn.addEventListener("click", startWall);
   wallPauseBtn.addEventListener("click", toggleWallPause);
   wallCloseBtn.addEventListener("click", stopWall);
 
@@ -1429,11 +1468,29 @@
     if (cached) {
       viewerSpinner.classList.add("show");
       materialize(cached).then(openViewerBuffer);
-    } else {
+      return;
+    }
+
+    // Not in this session's memory cache — the app may have been fully
+    // relaunched. Check whether the PDF's bytes were persisted to
+    // IndexedDB on import before falling back to the reselect prompt.
+    viewerSpinner.classList.add("show");
+    idbGet("pdfdata", record.id).then(function (row) {
+      if (viewerRecord !== record) return; // user opened something else meanwhile
+      if (row && row.blob) {
+        sessionPdfCache.set(record.id, row.blob);
+        return materialize(row.blob).then(openViewerBuffer);
+      }
       viewerSpinner.classList.remove("show");
       viewerReselectText.textContent = "PDFの中身はブラウザに保存していません。\nフォルダを選び直すと、他の表紙もまとめて開けるようになります。";
       viewerReselect.classList.add("show");
-    }
+    }).catch(function (err) {
+      console.error("保存済みPDFの読み込みに失敗しました", err);
+      if (viewerRecord !== record) return;
+      viewerSpinner.classList.remove("show");
+      viewerReselectText.textContent = "PDFの中身はブラウザに保存していません。\nフォルダを選び直すと、他の表紙もまとめて開けるようになります。";
+      viewerReselect.classList.add("show");
+    });
   }
 
   function openViewerBuffer(buffer) {
@@ -1460,6 +1517,7 @@
     if (!file || !viewerRecord) return;
     var targetId = viewerRecord.id;
     sessionPdfCache.set(targetId, file);
+    persistPdfBlob(targetId, file); // backfill so it survives the next relaunch too
     if (viewerRecord && viewerRecord.id === targetId) {
       viewerReselect.classList.remove("show");
       materialize(file).then(openViewerBuffer);
@@ -1540,12 +1598,14 @@
     // are read yet), so this works the same whether the folder has a
     // handful of PDFs or hundreds of them.
     var matchCount = 0;
+    var toBackfill = [];
     files.forEach(function (f) {
       if (!(f.type === "application/pdf" || /\.pdf$/i.test(f.name))) return;
       var cover = byName[fileBaseName(f.name)];
       if (cover) {
         sessionPdfCache.set(cover.id, f);
         matchCount++;
+        toBackfill.push({ id: cover.id, file: f });
       }
     });
 
@@ -1553,6 +1613,21 @@
       viewerReselectText.textContent = "選んだフォルダの中に、一致するPDFが見つかりませんでした。";
       return;
     }
+
+    // Quietly persist these PDFs' bytes in the background too, in small
+    // batches with pauses in between, so a large folder (hundreds+ of
+    // files) doesn't hammer IndexedDB all at once. This backfills older
+    // covers that predate content persistence, and re-persists any whose
+    // storage previously failed (e.g. a quota error).
+    (function backfillPdfData(pairs) {
+      var i = 0;
+      function step() {
+        var end = Math.min(i + 15, pairs.length);
+        for (; i < end; i++) { persistPdfBlob(pairs[i].id, pairs[i].file); }
+        if (i < pairs.length) setTimeout(step, 30);
+      }
+      step();
+    })(toBackfill);
 
     var pendingTargetId = viewerRecord ? viewerRecord.id : null;
     if (pendingTargetId !== null && sessionPdfCache.has(pendingTargetId)) {
@@ -1720,8 +1795,10 @@
     if (covers.length === 0) return;
     if (!confirm("取り込んだPDFをすべて削除します。よろしいですか？")) return;
     covers = [];
+    sessionPdfCache.clear();
     renderLibrary();
     idbClear("covers");
+    idbClear("pdfdata");
   });
   btnStart.addEventListener("click", startWall);
   btnSettings.addEventListener("click", openSheet);
@@ -1781,13 +1858,15 @@
     loadFromDb(false);
   }
 
-  // Older versions of this app stored the full PDF bytes in IndexedDB.
-  // Keep them usable for this session (in memory only), then strip them
-  // from persistent storage so nothing but the cover thumbnail is saved.
+  // A very old version of this app stored the full PDF bytes inline on the
+  // cover record itself. Move that data into the dedicated "pdfdata" store
+  // (today's persistent format) instead of just stripping it, so those
+  // covers keep working after a relaunch like everything else.
   function migrateLegacyPdfData() {
     covers.forEach(function (c) {
       if (c.pdfData) {
         sessionPdfCache.set(c.id, c.pdfData);
+        persistPdfBlob(c.id, c.pdfData);
         var stripped = { id: c.id, name: c.name, thumb: c.thumb, addedAt: c.addedAt };
         delete c.pdfData;
         idbPut("covers", stripped).catch(function (err) {
