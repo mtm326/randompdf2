@@ -565,31 +565,36 @@
     align-items: center;
     justify-content: center;
   }
-  .viewer-stage canvas, .viewer-stage img {
+  .viewer-stage > img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    position: absolute;
   }
-  .viewer-stage img { position: absolute; }
-  .viewer-stage canvas.slide-anim, .viewer-stage img.slide-anim {
-    transition: transform 0.3s cubic-bezier(.22,.61,.36,1), opacity 0.3s ease;
-  }
-  .viewer-ghost {
+  /* Continuous page track: 3 slots (prev/current/next), manually dragged
+     via JS (transform: translateX) rather than native scroll. The finger
+     drags the page with it 1:1 for a continuous, connected feel — useful
+     for tracking a two-page spread across the swipe — but each page still
+     stays a fully discrete, independent frame: past a set drag distance it
+     commits cleanly to the next page, short of that it springs back. */
+  .viewer-track {
     position: absolute; inset: 0;
+    display: flex;
+    width: 300%;
+    height: 100%;
+    touch-action: none;
+  }
+  .viewer-slot {
+    flex: 0 0 33.3333%;
     display: flex;
     align-items: center;
     justify-content: center;
-    pointer-events: none;
-    z-index: 2;
-    opacity: 0;
+    overflow: hidden;
   }
-  .viewer-ghost img {
+  .viewer-slot canvas {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-  }
-  .viewer-ghost.slide-anim {
-    transition: transform 0.3s cubic-bezier(.22,.61,.36,1), opacity 0.3s ease;
   }
   .viewer-topbar {
     position: absolute;
@@ -644,9 +649,6 @@
     opacity: 0;
   }
   .viewer-spinner.show { opacity: 1; }
-  .viewer-tap { position: absolute; top: 0; bottom: 0; width: 33.33%; z-index: 1; }
-  .viewer-tap-left { left: 0; }
-  .viewer-tap-right { right: 0; }
 
   .viewer-reselect {
     position: absolute;
@@ -823,9 +825,12 @@
 <div class="viewer" id="viewer">
   <div class="viewer-stage" id="viewer-stage">
     <img id="viewer-img" alt="">
-    <canvas id="viewer-canvas" style="display:none;"></canvas>
+    <div class="viewer-track" id="viewer-track">
+      <div class="viewer-slot" id="viewer-slot-left"><canvas id="viewer-canvas-prev"></canvas></div>
+      <div class="viewer-slot" id="viewer-slot-mid"><canvas id="viewer-canvas-cur"></canvas></div>
+      <div class="viewer-slot" id="viewer-slot-right"><canvas id="viewer-canvas-next"></canvas></div>
+    </div>
   </div>
-  <div class="viewer-ghost" id="viewer-ghost"><img id="viewer-ghost-img" alt=""></div>
   <div class="viewer-spinner" id="viewer-spinner"></div>
   <div class="viewer-reselect" id="viewer-reselect">
     <p id="viewer-reselect-text">PDFの中身はブラウザに保存していません。<br>フォルダを選び直すと、他の表紙もまとめて開けるようになります。</p>
@@ -839,8 +844,6 @@
     </button>
     <button class="link-btn" id="viewer-reselect-btn">このPDFだけを選ぶ</button>
   </div>
-  <div class="viewer-tap viewer-tap-left" id="viewer-tap-left"></div>
-  <div class="viewer-tap viewer-tap-right" id="viewer-tap-right"></div>
   <div class="viewer-topbar">
     <button class="viewer-close" id="viewer-close" aria-label="閉じる">
       <svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -848,7 +851,7 @@
     <span class="viewer-title" id="viewer-title"></span>
     <span class="viewer-page" id="viewer-page"></span>
   </div>
-  <div class="viewer-bottombar">左右タップでページ送り</div>
+  <div class="viewer-bottombar">タップ・スワイプでページ送り / 上スワイプで閉じる</div>
 </div>
 
 <script>
@@ -1427,13 +1430,17 @@
   // ---------------------------------------------------------------
   var viewer = $("viewer");
   var viewerImg = $("viewer-img");
-  var viewerCanvas = $("viewer-canvas");
+  var viewerTrack = $("viewer-track");
+  var viewerSlotLeft = $("viewer-slot-left");
+  var viewerSlotMid = $("viewer-slot-mid");
+  var viewerSlotRight = $("viewer-slot-right");
+  var viewerCanvasPrev = $("viewer-canvas-prev");
+  var viewerCanvasCur = $("viewer-canvas-cur");
+  var viewerCanvasNext = $("viewer-canvas-next");
   var viewerSpinner = $("viewer-spinner");
   var viewerTitle = $("viewer-title");
   var viewerPageLabel = $("viewer-page");
   var viewerClose = $("viewer-close");
-  var viewerTapLeft = $("viewer-tap-left");
-  var viewerTapRight = $("viewer-tap-right");
   var viewerReselect = $("viewer-reselect");
   var viewerReselectText = $("viewer-reselect-text");
   var viewerReselectBtn = $("viewer-reselect-btn");
@@ -1446,7 +1453,7 @@
   var viewerPdf = null;
   var viewerPageNum = 1;
   var viewerPageCount = 1;
-  var viewerRenderToken = 0;
+  var viewerRenderGen = 0;
   var viewerRecord = null;
 
   function openViewer(record) {
@@ -1458,11 +1465,10 @@
     viewerPageLabel.textContent = "";
     viewerImg.style.display = "block";
     viewerImg.src = record.thumb;
-    viewerCanvas.style.display = "none";
+    viewerTrack.style.display = "none";
     viewerPageNum = 1;
     viewer.classList.add("open");
     viewerReselect.classList.remove("show");
-    resetViewerTransforms();
 
     var cached = sessionPdfCache.get(record.id);
     if (cached) {
@@ -1499,7 +1505,14 @@
     window.pdfjsLib.getDocument({ data: buffer }).promise.then(function (pdf) {
       viewerPdf = pdf;
       viewerPageCount = pdf.numPages;
-      renderViewerPage(1);
+      viewerImg.style.display = "none";
+      viewerTrack.style.display = "flex";
+      canvasOrder = [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext];
+      viewerSlotLeft.appendChild(viewerCanvasPrev);
+      viewerSlotMid.appendChild(viewerCanvasCur);
+      viewerSlotRight.appendChild(viewerCanvasNext);
+      [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext].forEach(function (c) { c._renderedPage = null; });
+      syncViewerTrack(true);
     }).catch(function (err) {
       console.error("PDFを開けませんでした", err);
       viewerSpinner.classList.remove("show");
@@ -1639,142 +1652,223 @@
     }
   });
 
-  var viewerGhost = $("viewer-ghost");
-  var viewerGhostImg = $("viewer-ghost-img");
+  // ---------------------------------------------------------------
+  // Page track: 3 slots (prev / current / next), native horizontal
+  // scroll-snap. This is what gives page turning a continuous,
+  // finger-following feel (helpful for tracking a two-page spread across
+  // the swipe) instead of a canned transition — and it makes tap-to-turn
+  // and swipe-to-turn share one code path: both just scroll the track,
+  // and settling on a side slot is what actually advances the page.
+  // ---------------------------------------------------------------
+  // canvasOrder[0..2] = whichever <canvas> elements currently sit in the
+  // left/mid/right slots. Turning a page reorders this array and physically
+  // reparents the canvases into their new slots instead of redrawing —
+  // reparenting a <canvas> preserves its bitmap, so the slot that's already
+  // on screen after a commit never needs to repaint (no flicker), and only
+  // the one newly-exposed lookahead slot ever needs a fresh render.
+  var canvasOrder = [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext];
+  var viewerStageWidth = 0;
 
-  function resetViewerTransforms() {
-    [viewerCanvas, viewerImg, viewerGhost].forEach(function (el) {
-      el.classList.remove("slide-anim");
-      el.style.transform = "translateX(0)";
-    });
-    viewerGhost.style.opacity = "0";
-  }
-
-  // direction: +1 = moving to the next page (content slides in from the
-  // right, like a forward swipe), -1 = previous page (slides in from the
-  // left). Omit/0 for a plain re-render with no slide animation (e.g. the
-  // very first page of a newly opened PDF).
-  function renderViewerPage(n, direction) {
-    if (!viewerPdf) return;
-    n = Math.max(1, Math.min(n, viewerPageCount));
-    if (direction && n === viewerPageNum) return; // already at this edge
-    var animate = !!direction;
-    var token = ++viewerRenderToken;
-
-    if (animate) {
-      var visibleEl = (viewerCanvas.style.display !== "none") ? viewerCanvas : viewerImg;
-      var snapshotSrc = null;
-      try {
-        snapshotSrc = (visibleEl === viewerCanvas) ? viewerCanvas.toDataURL("image/jpeg", 0.85) : viewerImg.src;
-      } catch (e) { snapshotSrc = null; }
-      if (snapshotSrc) {
-        viewerGhostImg.src = snapshotSrc;
-        viewerGhost.classList.remove("slide-anim");
-        viewerGhost.style.transform = "translateX(0)";
-        viewerGhost.style.opacity = "1";
-        void viewerGhost.offsetWidth; // force reflow so the transition below actually animates
-        viewerGhost.classList.add("slide-anim");
-        viewerGhost.style.transform = "translateX(" + (-direction * 100) + "vw)";
-        viewerGhost.style.opacity = "0";
-        setTimeout(function () {
-          if (token !== viewerRenderToken) return;
-          viewerGhost.classList.remove("slide-anim");
-        }, 320);
-      }
-      [viewerCanvas, viewerImg].forEach(function (el) {
-        el.classList.remove("slide-anim");
-        el.style.transform = "translateX(" + (direction * 100) + "vw)";
-      });
-    } else {
-      resetViewerTransforms();
+  function renderPageIntoCanvas(canvas, pageNum, gen) {
+    if (canvas._renderedPage === pageNum) return Promise.resolve(); // already correct
+    if (!viewerPdf || pageNum < 1 || pageNum > viewerPageCount) {
+      canvas._renderedPage = pageNum;
+      canvas.width = 2;
+      canvas.height = 2;
+      return Promise.resolve();
     }
-
-    viewerPageNum = n;
-    viewerPageLabel.textContent = n + " / " + viewerPageCount;
-    viewerSpinner.classList.add("show");
-
-    viewerPdf.getPage(n).then(function (page) {
-      if (token !== viewerRenderToken) return;
-      var container = $("viewer-stage");
-      var maxW = container.clientWidth || window.innerWidth;
-      var maxH = container.clientHeight || window.innerHeight;
+    return viewerPdf.getPage(pageNum).then(function (page) {
+      if (gen !== viewerRenderGen) return;
+      var slot = canvas.parentElement;
+      var maxW = slot.clientWidth || window.innerWidth;
+      var maxH = slot.clientHeight || window.innerHeight;
       var baseViewport = page.getViewport({ scale: 1 });
       var scale = Math.min(maxW / baseViewport.width, maxH / baseViewport.height) * (window.devicePixelRatio || 1);
       if (!isFinite(scale) || scale <= 0) scale = 1;
       var viewport = page.getViewport({ scale: scale });
-      viewerCanvas.width = Math.round(viewport.width);
-      viewerCanvas.height = Math.round(viewport.height);
-      var ctx = viewerCanvas.getContext("2d");
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      var ctx = canvas.getContext("2d");
       return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () {
-        if (token !== viewerRenderToken) return;
-        viewerImg.style.display = "none";
-        viewerCanvas.style.display = "block";
-        viewerSpinner.classList.remove("show");
-        if (animate) {
-          void viewerCanvas.offsetWidth; // force reflow before transitioning in
-          viewerCanvas.classList.add("slide-anim");
-          viewerCanvas.style.transform = "translateX(0)";
-          setTimeout(function () {
-            if (token === viewerRenderToken) viewerCanvas.classList.remove("slide-anim");
-          }, 320);
-        }
+        canvas._renderedPage = pageNum;
       });
     }).catch(function (err) {
-      console.error("ページ描画エラー", err);
-      if (token === viewerRenderToken) viewerSpinner.classList.remove("show");
+      console.error("ページ描画エラー", pageNum, err);
     });
   }
+
+  function renderAllSlots() {
+    var gen = ++viewerRenderGen;
+    var targets = [viewerPageNum - 1, viewerPageNum, viewerPageNum + 1];
+    return Promise.all(canvasOrder.map(function (canvas, i) {
+      return renderPageIntoCanvas(canvas, targets[i], gen);
+    }));
+  }
+
+  function updateViewerStageWidth() {
+    viewerStageWidth = viewerTrack.parentElement.clientWidth || window.innerWidth;
+  }
+
+  function setTrackTransform(extraPx) {
+    viewerTrack.style.transform = "translateX(" + (-viewerStageWidth + extraPx) + "px)";
+  }
+
+  // Used for the very first page of a freshly opened PDF, and after a
+  // resize — every slot's content is suspect, so (re)render all three.
+  function syncViewerTrack(showSpinner) {
+    updateViewerStageWidth();
+    viewerTrack.style.transition = "none";
+    setTrackTransform(0);
+    viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
+    if (showSpinner) viewerSpinner.classList.add("show");
+    renderAllSlots().then(function () {
+      if (showSpinner) viewerSpinner.classList.remove("show");
+    });
+  }
+
+  function animateTrackTo(extraPx, onDone) {
+    viewerTrack.style.transition = "transform 0.22s cubic-bezier(.22,.61,.36,1)";
+    setTrackTransform(extraPx);
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      viewerTrack.removeEventListener("transitionend", finish);
+      viewerTrack.style.transition = "none";
+      if (onDone) onDone();
+    }
+    viewerTrack.addEventListener("transitionend", finish);
+    setTimeout(finish, 320); // fallback in case transitionend doesn't fire
+  }
+
+  function rotateCanvases(dir) {
+    var left = canvasOrder[0], mid = canvasOrder[1], right = canvasOrder[2];
+    canvasOrder = dir === -1 ? [mid, right, left] : [right, left, mid];
+    viewerSlotLeft.appendChild(canvasOrder[0]);
+    viewerSlotMid.appendChild(canvasOrder[1]);
+    viewerSlotRight.appendChild(canvasOrder[2]);
+  }
+
+  // dir: -1 = commit forward to the next page, +1 = commit back to the
+  // previous page. The slot being revealed already holds the correct,
+  // pre-rendered bitmap (from the previous sync's lookahead), so the
+  // commit animation itself never waits on any rendering.
+  function commitTurn(dir) {
+    animateTrackTo(dir === -1 ? -viewerStageWidth : viewerStageWidth, function () {
+      rotateCanvases(dir);
+      viewerPageNum += dir === -1 ? 1 : -1;
+      viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
+      setTrackTransform(0);
+      renderAllSlots(); // only the one newly-exposed lookahead slot actually redraws
+    });
+  }
+
+  function settleBack() {
+    animateTrackTo(0, function () {});
+  }
+
+  // ---------------------------------------------------------------
+  // Gesture handling: one drag axis is picked (horizontal page-turn vs.
+  // vertical swipe-to-close) once the finger has moved far enough to tell
+  // them apart; a tap (negligible movement) turns the page by thirds like
+  // before. Horizontal dragging follows the finger 1:1 in real time; past
+  // PAGE_COMMIT_THRESHOLD it commits to a full, independent page, short of
+  // that it springs back — pages never rest half-turned.
+  // ---------------------------------------------------------------
+  var GESTURE_IDLE = 0, GESTURE_HORIZ = 1, GESTURE_VERT = 2;
+  var gestureState = GESTURE_IDLE;
+  var gestureStartX = 0, gestureStartY = 0;
+  var dragDeltaPx = 0;
+  var AXIS_LOCK_PX = 8;
+  var PAGE_COMMIT_RATIO = 0.22;
+  var PAGE_COMMIT_MIN_PX = 56;
+  var CLOSE_SWIPE_PX = 70;
+
+  function handleViewerTap(touch) {
+    if (!touch || !viewerPdf) return;
+    // Use the middle slot's rect, not the track's own — the track is 3
+    // slots (300%) wide and shifted by transform, so its bounding rect
+    // does not correspond to what's actually visible on screen.
+    var rect = viewerSlotMid.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    var xRatio = (touch.clientX - rect.left) / rect.width;
+    if (xRatio < 0.33 && viewerPageNum > 1) commitTurn(1);
+    else if (xRatio > 0.67 && viewerPageNum < viewerPageCount) commitTurn(-1);
+  }
+
+  viewerTrack.addEventListener("touchstart", function (ev) {
+    if (ev.touches.length !== 1 || !viewerPdf) { gestureState = GESTURE_IDLE; return; }
+    gestureStartX = ev.touches[0].clientX;
+    gestureStartY = ev.touches[0].clientY;
+    dragDeltaPx = 0;
+    gestureState = GESTURE_IDLE;
+    viewerTrack.style.transition = "none";
+  }, { passive: true });
+
+  viewerTrack.addEventListener("touchmove", function (ev) {
+    if (ev.touches.length !== 1 || !viewerPdf) return;
+    var x = ev.touches[0].clientX, y = ev.touches[0].clientY;
+    var dx = x - gestureStartX, dy = y - gestureStartY;
+
+    if (gestureState === GESTURE_IDLE) {
+      if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
+      gestureState = Math.abs(dx) > Math.abs(dy) ? GESTURE_HORIZ : GESTURE_VERT;
+    }
+    if (gestureState === GESTURE_HORIZ) {
+      ev.preventDefault();
+      dragDeltaPx = dx;
+      // Soft rubber-band when dragging toward a side with no page there.
+      if (dx > 0 && viewerPageNum <= 1) dragDeltaPx = Math.pow(dx, 0.7);
+      if (dx < 0 && viewerPageNum >= viewerPageCount) dragDeltaPx = -Math.pow(-dx, 0.7);
+      setTrackTransform(dragDeltaPx);
+    }
+  }, { passive: false });
+
+  viewerTrack.addEventListener("touchend", function (ev) {
+    if (gestureState === GESTURE_HORIZ) {
+      var threshold = Math.max(PAGE_COMMIT_MIN_PX, viewerStageWidth * PAGE_COMMIT_RATIO);
+      if (dragDeltaPx <= -threshold && viewerPageNum < viewerPageCount) {
+        commitTurn(-1);
+      } else if (dragDeltaPx >= threshold && viewerPageNum > 1) {
+        commitTurn(1);
+      } else {
+        settleBack();
+      }
+    } else if (gestureState === GESTURE_VERT) {
+      var touch = ev.changedTouches && ev.changedTouches[0];
+      if (touch) {
+        var dy = touch.clientY - gestureStartY;
+        var dx = touch.clientX - gestureStartX;
+        if (dy < -CLOSE_SWIPE_PX && Math.abs(dy) > Math.abs(dx) * 1.3) closeViewer();
+      }
+    } else {
+      handleViewerTap(ev.changedTouches && ev.changedTouches[0]);
+    }
+    gestureState = GESTURE_IDLE;
+    lastViewerTouchEnd = Date.now();
+  }, { passive: true });
+
+  // Mouse click fallback (desktop testing / trackpad use): tap-by-thirds.
+  // Guarded against the synthetic click a touchscreen fires right after
+  // touchend, which would otherwise double-handle the same tap.
+  var lastViewerTouchEnd = 0;
+  viewerTrack.addEventListener("click", function (ev) {
+    if (Date.now() - lastViewerTouchEnd < 500) return;
+    handleViewerTap({ clientX: ev.clientX, clientY: ev.clientY });
+  });
 
   function closeViewer() {
     viewer.classList.remove("open");
     if (viewerPdf) { try { viewerPdf.destroy(); } catch (e) {} }
     viewerPdf = null;
-    viewerRenderToken++;
-    resetViewerTransforms();
+    viewerRenderGen++;
   }
 
   viewerClose.addEventListener("click", closeViewer);
-  viewerTapLeft.addEventListener("click", function () {
-    if (swipeJustHappened) return;
-    renderViewerPage(viewerPageNum - 1, -1);
+
+  window.addEventListener("resize", function () {
+    if (viewer.classList.contains("open") && viewerPdf) syncViewerTrack(false);
   });
-  viewerTapRight.addEventListener("click", function () {
-    if (swipeJustHappened) return;
-    renderViewerPage(viewerPageNum + 1, 1);
-  });
-
-  // Swipe left/right to move between pages, in addition to tapping the
-  // left/right edges. Matches the tap zones' direction: swipe left = next
-  // page, swipe right = previous page.
-  var swipeStartX = 0;
-  var swipeStartY = 0;
-  var swipeTracking = false;
-  var swipeJustHappened = false;
-  var SWIPE_THRESHOLD = 40;
-
-  viewer.addEventListener("touchstart", function (ev) {
-    if (ev.touches.length !== 1) return;
-    swipeStartX = ev.touches[0].clientX;
-    swipeStartY = ev.touches[0].clientY;
-    swipeTracking = true;
-  }, { passive: true });
-
-  viewer.addEventListener("touchend", function (ev) {
-    if (!swipeTracking) return;
-    swipeTracking = false;
-    var touch = ev.changedTouches && ev.changedTouches[0];
-    if (!touch) return;
-    var dx = touch.clientX - swipeStartX;
-    var dy = touch.clientY - swipeStartY;
-    if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
-    swipeJustHappened = true;
-    setTimeout(function () { swipeJustHappened = false; }, 350);
-    if (dx < 0) {
-      renderViewerPage(viewerPageNum + 1, 1);
-    } else {
-      renderViewerPage(viewerPageNum - 1, -1);
-    }
-  }, { passive: true });
 
   // ---------------------------------------------------------------
   // Wire up static UI
