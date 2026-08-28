@@ -455,6 +455,30 @@
   .switch[aria-checked="true"] { background: var(--accent); }
   .switch[aria-checked="true"]::after { transform: translateX(19px); }
 
+  .segmented {
+    display: flex;
+    background: var(--border);
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    gap: 2px;
+  }
+  .segmented button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 7px 12px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+  }
+  .segmented button[aria-pressed="true"] {
+    background: var(--bg-elevated);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  }
+
   /* ---------- processing overlay ---------- */
   .processing {
     position: fixed; inset: 0;
@@ -645,6 +669,21 @@
     flex: none;
   }
   .viewer-close svg { width: 14px; height: 14px; }
+  .viewer-fav {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.14);
+    backdrop-filter: blur(4px);
+    border: none;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .viewer-fav svg { width: 16px; height: 16px; }
+  .viewer-fav.active { color: #ffcb45; }
+  .viewer-fav.active svg path { fill: currentColor; }
   .viewer-title {
     flex: 1;
     color: #fff;
@@ -835,6 +874,15 @@
       <button class="switch" id="toggle-caption" role="switch" aria-checked="false"></button>
     </div>
   </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">ページを読む方向</span>
+    </div>
+    <div class="segmented" id="direction-toggle" role="group" aria-label="ページを読む方向">
+      <button type="button" id="direction-ltr" aria-pressed="true">左開き（一般的な本）</button>
+      <button type="button" id="direction-rtl" aria-pressed="false">右開き（マンガ式）</button>
+    </div>
+  </div>
 </div>
 
 <div class="wall" id="wall">
@@ -881,6 +929,9 @@
     </button>
     <span class="viewer-title" id="viewer-title"></span>
     <span class="viewer-page" id="viewer-page"></span>
+    <button class="viewer-fav" id="viewer-fav" aria-label="お気に入りに追加" aria-pressed="false">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </button>
   </div>
   <div class="viewer-bottombar">タップ・スワイプでページ送り / 上スワイプで閉じる</div>
 </div>
@@ -1039,7 +1090,8 @@
   // in this in-memory map for as long as the current app session is open.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr" };
+  function isRtl() { return settings.direction === "rtl"; }
   var workerConfigured = false;
 
   function ensureWorker() {
@@ -1088,6 +1140,8 @@
   var tilesRange = $("tiles-range");
   var tilesValue = $("tiles-value");
   var toggleCaption = $("toggle-caption");
+  var directionLtrBtn = $("direction-ltr");
+  var directionRtlBtn = $("direction-rtl");
 
   // ---------------------------------------------------------------
   // Rendering: library view
@@ -1164,6 +1218,7 @@
     if (!c) return;
     c.favorite = !c.favorite;
     renderLibrary();
+    syncViewerFavButton();
     idbPut("covers", c);
   }
 
@@ -1332,6 +1387,8 @@
     tilesRange.value = settings.tiles;
     tilesValue.textContent = settings.tiles + "枚";
     toggleCaption.setAttribute("aria-checked", settings.caption ? "true" : "false");
+    directionLtrBtn.setAttribute("aria-pressed", isRtl() ? "false" : "true");
+    directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
   }
 
   function saveSetting(key, value) {
@@ -1504,6 +1561,7 @@
   var viewerTitle = $("viewer-title");
   var viewerPageLabel = $("viewer-page");
   var viewerClose = $("viewer-close");
+  var viewerFav = $("viewer-fav");
   var viewerReselect = $("viewer-reselect");
   var viewerReselectText = $("viewer-reselect-text");
   var viewerReselectBtn = $("viewer-reselect-btn");
@@ -1528,6 +1586,7 @@
     viewerPageLabel.textContent = "";
     viewerImg.style.display = "block";
     viewerImg.src = record.thumb;
+    syncViewerFavButton();
     viewerTrack.style.display = "none";
     viewerPageNum = 1;
     viewer.classList.add("open");
@@ -1760,12 +1819,30 @@
     });
   }
 
+  // Slot content assignment: which page number sits in the left/right slot
+  // depends on reading direction. In left-to-right (normal) reading the
+  // left slot always holds the previous page and the right slot the next
+  // page. In right-to-left (manga-style) reading that's mirrored -- the
+  // left slot holds the *next* page, since dragging right (which reveals
+  // the left slot) is how you advance when reading right-to-left.
   function renderAllSlots() {
     var gen = ++viewerRenderGen;
-    var targets = [viewerPageNum - 1, viewerPageNum, viewerPageNum + 1];
+    var targets = isRtl()
+      ? [viewerPageNum + 1, viewerPageNum, viewerPageNum - 1]
+      : [viewerPageNum - 1, viewerPageNum, viewerPageNum + 1];
     return Promise.all(canvasOrder.map(function (canvas, i) {
       return renderPageIntoCanvas(canvas, targets[i], gen);
     }));
+  }
+
+  // Whether the slot revealed by dragging/tapping toward that side actually
+  // has a valid page in it right now (used to gate commits and to decide
+  // when to rubber-band instead of following the finger).
+  function canRevealLeftSlot() {
+    return isRtl() ? viewerPageNum < viewerPageCount : viewerPageNum > 1;
+  }
+  function canRevealRightSlot() {
+    return isRtl() ? viewerPageNum > 1 : viewerPageNum < viewerPageCount;
   }
 
   function updateViewerStageWidth() {
@@ -1812,14 +1889,18 @@
     viewerSlotRight.appendChild(canvasOrder[2]);
   }
 
-  // dir: -1 = commit forward to the next page, +1 = commit back to the
-  // previous page. The slot being revealed already holds the correct,
-  // pre-rendered bitmap (from the previous sync's lookahead), so the
-  // commit animation itself never waits on any rendering.
+  // dir is a screen-space direction, not a semantic one: -1 = slide the
+  // track left (reveal the right slot), +1 = slide it right (reveal the
+  // left slot). This is what a drag-follows-finger gesture always means,
+  // regardless of reading direction. Which page number that lands on
+  // depends on reading direction, since that's what determines whether the
+  // right slot holds the next page or the previous one (see renderAllSlots).
   function commitTurn(dir) {
     animateTrackTo(dir === -1 ? -viewerStageWidth : viewerStageWidth, function () {
       rotateCanvases(dir);
-      viewerPageNum += dir === -1 ? 1 : -1;
+      var revealedRight = dir === -1;
+      var advance = isRtl() ? !revealedRight : revealedRight;
+      viewerPageNum += advance ? 1 : -1;
       viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
       setTrackTransform(0);
       renderAllSlots(); // only the one newly-exposed lookahead slot actually redraws
@@ -1842,10 +1923,34 @@
   var gestureState = GESTURE_IDLE;
   var gestureStartX = 0, gestureStartY = 0;
   var dragDeltaPx = 0;
-  var AXIS_LOCK_PX = 8;
-  var PAGE_COMMIT_RATIO = 0.22;
-  var PAGE_COMMIT_MIN_PX = 56;
+  var AXIS_LOCK_PX = 6;
+  var PAGE_COMMIT_RATIO = 0.14;
+  var PAGE_COMMIT_MIN_PX = 34;
   var CLOSE_SWIPE_PX = 70;
+  // A quick flick commits the page turn even if the finger didn't travel
+  // the full distance threshold -- matches how native page/photo swipers
+  // feel, and is what makes short, fast real-world swipes register.
+  // Velocity is measured over a short trailing window (not just the most
+  // recent touchmove-to-touchmove delta) so a single sparse/jumpy sample
+  // can't be mistaken for a fast flick.
+  var FLICK_VELOCITY_PX_MS = 0.45;
+  var FLICK_MIN_DRAG_PX = 14;
+  var FLICK_WINDOW_MS = 60;
+  var velocitySamples = []; // { t, x }
+  var dragVelocityPxMs = 0;
+
+  function recordVelocitySample(t, x) {
+    velocitySamples.push({ t: t, x: x });
+    while (velocitySamples.length > 1 && t - velocitySamples[0].t > FLICK_WINDOW_MS) {
+      velocitySamples.shift();
+    }
+    var oldest = velocitySamples[0];
+    var dt = t - oldest.t;
+    // Guard only against near-simultaneous samples (divide-by-near-zero);
+    // any real, larger dt is trusted even if it's small in absolute terms --
+    // touch events (coalesced or not) report true positions at true times.
+    dragVelocityPxMs = dt >= 4 ? (x - oldest.x) / dt : 0;
+  }
 
   function handleViewerTap(touch) {
     if (!touch || !viewerPdf) return;
@@ -1855,8 +1960,8 @@
     var rect = viewerSlotMid.getBoundingClientRect();
     if (rect.width <= 0) return;
     var xRatio = (touch.clientX - rect.left) / rect.width;
-    if (xRatio < 0.33 && viewerPageNum > 1) commitTurn(1);
-    else if (xRatio > 0.67 && viewerPageNum < viewerPageCount) commitTurn(-1);
+    if (xRatio < 0.33 && canRevealLeftSlot()) commitTurn(1);
+    else if (xRatio > 0.67 && canRevealRightSlot()) commitTurn(-1);
   }
 
   viewerTrack.addEventListener("touchstart", function (ev) {
@@ -1865,6 +1970,8 @@
     gestureStartY = ev.touches[0].clientY;
     dragDeltaPx = 0;
     gestureState = GESTURE_IDLE;
+    velocitySamples = [{ t: ev.timeStamp || Date.now(), x: gestureStartX }];
+    dragVelocityPxMs = 0;
     viewerTrack.style.transition = "none";
   }, { passive: true });
 
@@ -1879,10 +1986,12 @@
     }
     if (gestureState === GESTURE_HORIZ) {
       ev.preventDefault();
+      recordVelocitySample(ev.timeStamp || Date.now(), x);
+
       dragDeltaPx = dx;
       // Soft rubber-band when dragging toward a side with no page there.
-      if (dx > 0 && viewerPageNum <= 1) dragDeltaPx = Math.pow(dx, 0.7);
-      if (dx < 0 && viewerPageNum >= viewerPageCount) dragDeltaPx = -Math.pow(-dx, 0.7);
+      if (dx > 0 && !canRevealLeftSlot()) dragDeltaPx = Math.pow(dx, 0.7);
+      if (dx < 0 && !canRevealRightSlot()) dragDeltaPx = -Math.pow(-dx, 0.7);
       setTrackTransform(dragDeltaPx);
     }
   }, { passive: false });
@@ -1890,9 +1999,12 @@
   viewerTrack.addEventListener("touchend", function (ev) {
     if (gestureState === GESTURE_HORIZ) {
       var threshold = Math.max(PAGE_COMMIT_MIN_PX, viewerStageWidth * PAGE_COMMIT_RATIO);
-      if (dragDeltaPx <= -threshold && viewerPageNum < viewerPageCount) {
+      var draggedEnough = Math.abs(dragDeltaPx) >= FLICK_MIN_DRAG_PX;
+      var flickLeft = draggedEnough && dragVelocityPxMs <= -FLICK_VELOCITY_PX_MS && dragDeltaPx < 0;
+      var flickRight = draggedEnough && dragVelocityPxMs >= FLICK_VELOCITY_PX_MS && dragDeltaPx > 0;
+      if ((dragDeltaPx <= -threshold || flickLeft) && canRevealRightSlot()) {
         commitTurn(-1);
-      } else if (dragDeltaPx >= threshold && viewerPageNum > 1) {
+      } else if ((dragDeltaPx >= threshold || flickRight) && canRevealLeftSlot()) {
         commitTurn(1);
       } else {
         settleBack();
@@ -1928,6 +2040,17 @@
   }
 
   viewerClose.addEventListener("click", closeViewer);
+
+  function syncViewerFavButton() {
+    var isFav = !!(viewerRecord && viewerRecord.favorite);
+    viewerFav.classList.toggle("active", isFav);
+    viewerFav.setAttribute("aria-pressed", isFav ? "true" : "false");
+    viewerFav.setAttribute("aria-label", isFav ? "お気に入りから外す" : "お気に入りに追加");
+  }
+  viewerFav.addEventListener("click", function () {
+    if (!viewerRecord) return;
+    toggleFavorite(viewerRecord.id);
+  });
 
   window.addEventListener("resize", function () {
     if (viewer.classList.contains("open") && viewerPdf) syncViewerTrack(false);
@@ -1992,6 +2115,17 @@
     saveSetting("caption", v);
     wallTiles.forEach(function (t) { t.capEl.classList.toggle("show", v); });
   });
+  function setDirection(dir) {
+    if (settings.direction === dir) return;
+    saveSetting("direction", dir);
+    directionLtrBtn.setAttribute("aria-pressed", dir === "ltr" ? "true" : "false");
+    directionRtlBtn.setAttribute("aria-pressed", dir === "rtl" ? "true" : "false");
+    // Slot contents (which page is "prev"/"next") depend on reading
+    // direction, so an open viewer needs its slots re-targeted.
+    if (viewer.classList.contains("open") && viewerPdf) syncViewerTrack(false);
+  }
+  directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
+  directionRtlBtn.addEventListener("click", function () { setDirection("rtl"); });
 
   // ---------------------------------------------------------------
   // Init
