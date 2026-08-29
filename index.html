@@ -841,6 +841,7 @@
 <div class="processing" id="processing">
   <div class="spinner"></div>
   <div class="ptext" id="processing-text">表紙を作成中…</div>
+  <button class="btn btn-ghost" id="btn-processing-cancel">中止する</button>
 </div>
 
 <div class="sheet-backdrop" id="sheet-backdrop"></div>
@@ -1092,6 +1093,7 @@
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
   var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr" };
   function isRtl() { return settings.direction === "rtl"; }
+  var importCancelRequested = false; // set by the "中止する" button during a bulk import
   var workerConfigured = false;
 
   function ensureWorker() {
@@ -1125,6 +1127,7 @@
   var btnSettings = $("btn-settings");
   var processing = $("processing");
   var processingText = $("processing-text");
+  var btnProcessingCancel = $("btn-processing-cancel");
   var libraryToggle = $("library-toggle");
   var libraryToggleLabel = $("library-toggle-label");
   var libraryPanel = $("library-panel");
@@ -1317,17 +1320,22 @@
     }
 
     processing.classList.add("open");
+    importCancelRequested = false;
     var done = 0;
     var total = toAdd.length;
     processingText.textContent = "取り込み中… (" + done + " / " + total + ")";
 
+    function finishImport() {
+      idbAll("covers").then(function (rows) {
+        covers = rows.sort(function (a, b) { return a.addedAt - b.addedAt; });
+        processing.classList.remove("open");
+        renderLibrary();
+      });
+    }
+
     function next(i) {
-      if (i >= toAdd.length) {
-        idbAll("covers").then(function (rows) {
-          covers = rows.sort(function (a, b) { return a.addedAt - b.addedAt; });
-          processing.classList.remove("open");
-          renderLibrary();
-        });
+      if (importCancelRequested || i >= toAdd.length) {
+        finishImport();
         return;
       }
       var file = toAdd[i];
@@ -1357,6 +1365,7 @@
     // of PDFs) otherwise never give Safari a chance to garbage-collect
     // between iterations, and peak memory creeps up until the tab crashes.
     function advance(nextIndex) {
+      if (importCancelRequested) { finishImport(); return; }
       if (nextIndex > 0 && nextIndex % 15 === 0) {
         setTimeout(function () { next(nextIndex); }, 30);
       } else {
@@ -2070,6 +2079,13 @@
   fileInputSingle.addEventListener("change", function (ev) {
     handleFiles(ev.target.files);
     fileInputSingle.value = "";
+  });
+  btnProcessingCancel.addEventListener("click", function () {
+    // The file currently in flight finishes on its own (its render/save
+    // can't be aborted mid-way), but no further files are started, and the
+    // overlay closes right away so the user isn't stuck waiting on it.
+    importCancelRequested = true;
+    processing.classList.remove("open");
   });
   btnClear.addEventListener("click", function () {
     if (covers.length === 0) return;
