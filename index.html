@@ -525,7 +525,7 @@
     grid-auto-rows: 1fr;
     gap: 3px;
     padding: 3px;
-    padding-top: max(92px, calc(env(safe-area-inset-top) + 80px));
+    padding-top: max(60px, calc(env(safe-area-inset-top) + 46px));
   }
   .wall-tile {
     position: relative;
@@ -632,6 +632,7 @@
     display: flex;
     width: 300%;
     height: 100%;
+    padding-top: 34px;
     touch-action: none;
   }
   .viewer-slot {
@@ -712,6 +713,7 @@
     animation: spin 0.8s linear infinite;
     z-index: 2;
     opacity: 0;
+    pointer-events: none;
   }
   .viewer-spinner.show { opacity: 1; }
 
@@ -763,6 +765,99 @@
     font-size: 0.72rem;
     z-index: 2;
     pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .viewer-bottombar.dim { opacity: 0; }
+
+  /* Page-jump slider: toggled by tapping the (otherwise dead) middle third
+     of the screen. Custom-built (not a native <input type=range>) so a
+     preview bubble can be positioned precisely above the thumb while
+     dragging. */
+  .viewer-slider {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: 0;
+    padding: 0 20px max(20px, env(safe-area-inset-bottom));
+    z-index: 4;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    background: linear-gradient(to top, rgba(0,0,0,0.72), transparent 85%);
+  }
+  .viewer-slider.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+  .viewer-slider-label {
+    text-align: center;
+    color: rgba(255,255,255,0.85);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    padding-bottom: 10px;
+  }
+  .viewer-slider-track {
+    position: relative;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    touch-action: none;
+  }
+  .viewer-slider-track::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 4px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.22);
+  }
+  .viewer-slider-fill {
+    position: absolute;
+    left: 0;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--accent);
+  }
+  .viewer-slider-thumb {
+    position: absolute;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    transform: translateX(-50%);
+  }
+  .viewer-slider-preview {
+    position: absolute;
+    bottom: 100%;
+    margin-bottom: 10px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+  }
+  .viewer-slider-preview.show { opacity: 1; }
+  .viewer-slider-preview canvas {
+    max-width: 120px;
+    max-height: 160px;
+    border-radius: 6px;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    box-shadow: 0 6px 18px -6px rgba(0,0,0,0.6);
+    background: #fff;
+  }
+  .viewer-slider-preview-page {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem;
+    color: #fff;
+    background: rgba(0,0,0,0.6);
+    padding: 2px 8px;
+    border-radius: 10px;
   }
 
   #file-input, #file-input-single, #reselect-input, #reselect-folder-input { display: none; }
@@ -884,6 +979,13 @@
       <button type="button" id="direction-rtl" aria-pressed="false">右開き（マンガ式）</button>
     </div>
   </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">一覧の並び順をシャッフルする間隔</span>
+      <span class="field-value" id="shuffle-minutes-value">5分</span>
+    </div>
+    <input type="range" id="shuffle-minutes-range" min="1" max="30" step="1" value="5">
+  </div>
 </div>
 
 <div class="wall" id="wall">
@@ -934,7 +1036,18 @@
       <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
     </button>
   </div>
-  <div class="viewer-bottombar">タップ・スワイプでページ送り / 上スワイプで閉じる</div>
+  <div class="viewer-bottombar" id="viewer-bottombar">タップ・スワイプでページ送り / 中央タップでページ一覧 / 上スワイプで閉じる</div>
+  <div class="viewer-slider" id="viewer-slider">
+    <div class="viewer-slider-label" id="viewer-slider-label"></div>
+    <div class="viewer-slider-track" id="viewer-slider-track">
+      <div class="viewer-slider-fill" id="viewer-slider-fill"></div>
+      <div class="viewer-slider-preview" id="viewer-slider-preview">
+        <canvas id="viewer-slider-preview-canvas"></canvas>
+        <span class="viewer-slider-preview-page" id="viewer-slider-preview-page"></span>
+      </div>
+      <div class="viewer-slider-thumb" id="viewer-slider-thumb"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1091,7 +1204,7 @@
   // in this in-memory map for as long as the current app session is open.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr" };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5 };
   function isRtl() { return settings.direction === "rtl"; }
   var importCancelRequested = false; // set by the "中止する" button during a bulk import
   var workerConfigured = false;
@@ -1145,6 +1258,8 @@
   var toggleCaption = $("toggle-caption");
   var directionLtrBtn = $("direction-ltr");
   var directionRtlBtn = $("direction-rtl");
+  var shuffleMinutesRange = $("shuffle-minutes-range");
+  var shuffleMinutesValue = $("shuffle-minutes-value");
 
   // ---------------------------------------------------------------
   // Rendering: library view
@@ -1232,6 +1347,50 @@
     idbDelete("covers", id);
     idbDelete("pdfdata", id);
   }
+
+  // ---------------------------------------------------------------
+  // Library shuffle: while the "取り込み済みのPDFを見る" panel is open, its
+  // order reshuffles every so often for a bit of random-browsing variety --
+  // in-memory only (nothing written back to IndexedDB, so it's essentially
+  // free), paused whenever it wouldn't be seen (panel closed, tab in the
+  // background, the wall or a PDF viewer open on top of it) or while the
+  // user has a finger down on a card (so a delete/favorite button never
+  // moves out from under a mid-tap).
+  // ---------------------------------------------------------------
+  var libraryShuffleTimer = null;
+  var libraryGridTouchActive = false;
+
+  function libraryShuffleTick() {
+    if (document.hidden) return;
+    if (!libraryPanel.classList.contains("open")) return;
+    if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
+    if (libraryGridTouchActive) return;
+    if (covers.length < 2) return;
+    covers = shuffle(covers);
+    renderLibrary();
+  }
+  function startLibraryShuffle() {
+    if (libraryShuffleTimer) return;
+    libraryShuffleTimer = setInterval(libraryShuffleTick, settings.shuffleMinutes * 60000);
+  }
+  function stopLibraryShuffle() {
+    if (!libraryShuffleTimer) return;
+    clearInterval(libraryShuffleTimer);
+    libraryShuffleTimer = null;
+  }
+  function restartLibraryShuffleIfRunning() {
+    if (!libraryShuffleTimer) return;
+    stopLibraryShuffle();
+    startLibraryShuffle();
+  }
+  grid.addEventListener("touchstart", function () { libraryGridTouchActive = true; }, { passive: true });
+  grid.addEventListener("touchend", function () { libraryGridTouchActive = false; }, { passive: true });
+  grid.addEventListener("mousedown", function () { libraryGridTouchActive = true; });
+  window.addEventListener("mouseup", function () { libraryGridTouchActive = false; });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stopLibraryShuffle();
+    else if (libraryPanel.classList.contains("open")) startLibraryShuffle();
+  });
 
   // ---------------------------------------------------------------
   // Adding PDFs -> render page 1 for thumbnail
@@ -1398,6 +1557,8 @@
     toggleCaption.setAttribute("aria-checked", settings.caption ? "true" : "false");
     directionLtrBtn.setAttribute("aria-pressed", isRtl() ? "false" : "true");
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
+    shuffleMinutesRange.value = settings.shuffleMinutes;
+    shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
   }
 
   function saveSetting(key, value) {
@@ -1571,6 +1732,15 @@
   var viewerPageLabel = $("viewer-page");
   var viewerClose = $("viewer-close");
   var viewerFav = $("viewer-fav");
+  var viewerBottombar = $("viewer-bottombar");
+  var viewerSlider = $("viewer-slider");
+  var viewerSliderLabel = $("viewer-slider-label");
+  var viewerSliderTrack = $("viewer-slider-track");
+  var viewerSliderFill = $("viewer-slider-fill");
+  var viewerSliderThumb = $("viewer-slider-thumb");
+  var viewerSliderPreview = $("viewer-slider-preview");
+  var viewerSliderPreviewCanvas = $("viewer-slider-preview-canvas");
+  var viewerSliderPreviewPage = $("viewer-slider-preview-page");
   var viewerReselect = $("viewer-reselect");
   var viewerReselectText = $("viewer-reselect-text");
   var viewerReselectBtn = $("viewer-reselect-btn");
@@ -1643,6 +1813,7 @@
       viewerSlotMid.appendChild(viewerCanvasCur);
       viewerSlotRight.appendChild(viewerCanvasNext);
       [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext].forEach(function (c) { c._renderedPage = null; });
+      closeSlider();
       syncViewerTrack(true);
     }).catch(function (err) {
       console.error("PDFを開けませんでした", err);
@@ -1913,12 +2084,143 @@
       viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
       setTrackTransform(0);
       renderAllSlots(); // only the one newly-exposed lookahead slot actually redraws
+      if (sliderOpen) setSliderVisual(viewerPageNum);
     });
   }
 
   function settleBack() {
     animateTrackTo(0, function () {});
   }
+
+  // ---------------------------------------------------------------
+  // Page-jump slider: tapping the (otherwise unused) middle third of the
+  // screen toggles a scrubber along the bottom. Dragging it shows a small
+  // rendered preview of the target page above the thumb; releasing jumps
+  // straight there (a full resync, unlike commitTurn's one-page-at-a-time
+  // carousel animation).
+  // ---------------------------------------------------------------
+  var sliderOpen = false;
+  var sliderDragging = false;
+  var sliderPreviewGen = 0;
+  var sliderPreviewLastPage = null;
+  var sliderTargetPage = null;
+
+  function sliderPct(pageNum) {
+    return viewerPageCount > 1 ? ((pageNum - 1) / (viewerPageCount - 1)) * 100 : 0;
+  }
+
+  function setSliderVisual(pageNum) {
+    var pct = sliderPct(pageNum);
+    viewerSliderFill.style.width = pct + "%";
+    viewerSliderThumb.style.left = pct + "%";
+    viewerSliderPreview.style.left = pct + "%";
+    viewerSliderLabel.textContent = pageNum + " / " + viewerPageCount;
+  }
+
+  function openSlider() {
+    if (!viewerPdf || viewerPageCount <= 1) return;
+    sliderOpen = true;
+    setSliderVisual(viewerPageNum);
+    viewerSlider.classList.add("show");
+    viewerBottombar.classList.add("dim");
+  }
+  function closeSlider() {
+    sliderOpen = false;
+    sliderDragging = false;
+    viewerSlider.classList.remove("show");
+    viewerSliderPreview.classList.remove("show");
+    viewerBottombar.classList.remove("dim");
+  }
+  function toggleSlider() {
+    if (sliderOpen) closeSlider(); else openSlider();
+  }
+
+  function jumpToPage(pageNum) {
+    pageNum = Math.max(1, Math.min(viewerPageCount, pageNum));
+    if (pageNum === viewerPageNum) return;
+    viewerPageNum = pageNum;
+    syncViewerTrack(false);
+  }
+
+  // Renders the target page small, into its own dedicated canvas -- never
+  // the same canvas mid-render as the main prev/cur/next slots, so this
+  // can't collide with renderAllSlots(). Skips re-rendering a page it's
+  // already showing (a fast drag can revisit the same page repeatedly).
+  function renderSliderPreview(pageNum) {
+    if (sliderPreviewLastPage === pageNum) return;
+    sliderPreviewLastPage = pageNum;
+    if (!viewerPdf) return;
+    var gen = ++sliderPreviewGen;
+    viewerPdf.getPage(pageNum).then(function (page) {
+      if (gen !== sliderPreviewGen) return;
+      var baseViewport = page.getViewport({ scale: 1 });
+      var maxDim = 240;
+      var scale = maxDim / Math.max(baseViewport.width, baseViewport.height);
+      if (!isFinite(scale) || scale <= 0) scale = 1;
+      var viewport = page.getViewport({ scale: scale });
+      viewerSliderPreviewCanvas.width = Math.round(viewport.width);
+      viewerSliderPreviewCanvas.height = Math.round(viewport.height);
+      var ctx = viewerSliderPreviewCanvas.getContext("2d");
+      return page.render({ canvasContext: ctx, viewport: viewport }).promise;
+    }).then(function () {
+      if (gen !== sliderPreviewGen) return;
+      viewerSliderPreviewPage.textContent = pageNum + " / " + viewerPageCount;
+    }).catch(function (err) {
+      console.error("ページプレビュー描画エラー", pageNum, err);
+    });
+  }
+
+  function sliderPageFromClientX(clientX) {
+    var rect = viewerSliderTrack.getBoundingClientRect();
+    if (rect.width <= 0) return viewerPageNum;
+    var ratio = (clientX - rect.left) / rect.width;
+    ratio = Math.max(0, Math.min(1, ratio));
+    return Math.round(1 + ratio * (viewerPageCount - 1));
+  }
+
+  function sliderDragStart(clientX) {
+    if (!viewerPdf || viewerPageCount <= 1) return;
+    sliderDragging = true;
+    sliderTargetPage = sliderPageFromClientX(clientX);
+    setSliderVisual(sliderTargetPage);
+    viewerSliderPreview.classList.add("show");
+    renderSliderPreview(sliderTargetPage);
+  }
+  function sliderDragMove(clientX) {
+    if (!sliderDragging) return;
+    sliderTargetPage = sliderPageFromClientX(clientX);
+    setSliderVisual(sliderTargetPage);
+    renderSliderPreview(sliderTargetPage);
+  }
+  function sliderDragEnd() {
+    if (!sliderDragging) return;
+    sliderDragging = false;
+    viewerSliderPreview.classList.remove("show");
+    sliderPreviewLastPage = null;
+    if (sliderTargetPage != null) jumpToPage(sliderTargetPage);
+  }
+
+  viewerSliderTrack.addEventListener("touchstart", function (ev) {
+    sliderDragStart(ev.touches[0].clientX);
+  }, { passive: true });
+  viewerSliderTrack.addEventListener("touchmove", function (ev) {
+    if (!sliderDragging) return;
+    ev.preventDefault();
+    sliderDragMove(ev.touches[0].clientX);
+  }, { passive: false });
+  viewerSliderTrack.addEventListener("touchend", sliderDragEnd, { passive: true });
+
+  // Mouse fallback (desktop / trackpad use).
+  viewerSliderTrack.addEventListener("mousedown", function (ev) {
+    sliderDragStart(ev.clientX);
+    ev.preventDefault();
+  });
+  window.addEventListener("mousemove", function (ev) {
+    if (sliderDragging) sliderDragMove(ev.clientX);
+  });
+  window.addEventListener("mouseup", function () {
+    if (sliderDragging) sliderDragEnd();
+  });
 
   // ---------------------------------------------------------------
   // Gesture handling: one drag axis is picked (horizontal page-turn vs.
@@ -1971,6 +2273,7 @@
     var xRatio = (touch.clientX - rect.left) / rect.width;
     if (xRatio < 0.33 && canRevealLeftSlot()) commitTurn(1);
     else if (xRatio > 0.67 && canRevealRightSlot()) commitTurn(-1);
+    else toggleSlider(); // middle third: no page-turn action, so it's free for this
   }
 
   viewerTrack.addEventListener("touchstart", function (ev) {
@@ -2046,6 +2349,7 @@
     if (viewerPdf) { try { viewerPdf.destroy(); } catch (e) {} }
     viewerPdf = null;
     viewerRenderGen++;
+    closeSlider();
   }
 
   viewerClose.addEventListener("click", closeViewer);
@@ -2108,6 +2412,7 @@
   libraryToggle.addEventListener("click", function () {
     var open = libraryPanel.classList.toggle("open");
     libraryToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) startLibraryShuffle(); else stopLibraryShuffle();
   });
 
   intervalRange.addEventListener("input", function () {
@@ -2142,6 +2447,12 @@
   }
   directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
   directionRtlBtn.addEventListener("click", function () { setDirection("rtl"); });
+  shuffleMinutesRange.addEventListener("input", function () {
+    var v = parseInt(shuffleMinutesRange.value, 10);
+    shuffleMinutesValue.textContent = v + "分";
+    saveSetting("shuffleMinutes", v);
+    restartLibraryShuffleIfRunning();
+  });
 
   // ---------------------------------------------------------------
   // Init
