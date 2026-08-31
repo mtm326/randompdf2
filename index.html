@@ -1355,7 +1355,10 @@
   // free), paused whenever it wouldn't be seen (panel closed, tab in the
   // background, the wall or a PDF viewer open on top of it) or while the
   // user has a finger down on a card (so a delete/favorite button never
-  // moves out from under a mid-tap).
+  // moves out from under a mid-tap). The timer itself starts as soon as the
+  // tab is opened (see init()), not only once the panel is first opened --
+  // that way the cadence is counted from tab-open, and re-opening/closing
+  // the panel later doesn't reset how "due" the next shuffle is.
   // ---------------------------------------------------------------
   var libraryShuffleTimer = null;
   var libraryGridTouchActive = false;
@@ -1389,7 +1392,7 @@
   window.addEventListener("mouseup", function () { libraryGridTouchActive = false; });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stopLibraryShuffle();
-    else if (libraryPanel.classList.contains("open")) startLibraryShuffle();
+    else startLibraryShuffle();
   });
 
   // ---------------------------------------------------------------
@@ -2105,15 +2108,35 @@
   var sliderPreviewLastPage = null;
   var sliderTargetPage = null;
 
+  // Position along the track matches reading direction, not raw page order:
+  // in left-to-right reading, page 1 sits at the left end (as you'd expect
+  // from a normal progress bar). In right-to-left (manga-style) reading,
+  // page 1 sits at the *right* end instead, since that's where reading
+  // starts -- matching the same left/right layout the page-turn gesture
+  // itself already uses (see canRevealLeftSlot/canRevealRightSlot above).
   function sliderPct(pageNum) {
-    return viewerPageCount > 1 ? ((pageNum - 1) / (viewerPageCount - 1)) * 100 : 0;
+    if (viewerPageCount <= 1) return 0;
+    var ratio = (pageNum - 1) / (viewerPageCount - 1);
+    if (isRtl()) ratio = 1 - ratio;
+    return ratio * 100;
   }
 
   function setSliderVisual(pageNum) {
     var pct = sliderPct(pageNum);
-    viewerSliderFill.style.width = pct + "%";
     viewerSliderThumb.style.left = pct + "%";
     viewerSliderPreview.style.left = pct + "%";
+    // The filled portion always grows from the "start" edge (where page 1
+    // is) toward the thumb, so it reads as progress in the same direction
+    // pages are actually turned.
+    if (isRtl()) {
+      viewerSliderFill.style.left = "";
+      viewerSliderFill.style.right = "0";
+      viewerSliderFill.style.width = (100 - pct) + "%";
+    } else {
+      viewerSliderFill.style.right = "";
+      viewerSliderFill.style.left = "0";
+      viewerSliderFill.style.width = pct + "%";
+    }
     viewerSliderLabel.textContent = pageNum + " / " + viewerPageCount;
   }
 
@@ -2175,6 +2198,7 @@
     if (rect.width <= 0) return viewerPageNum;
     var ratio = (clientX - rect.left) / rect.width;
     ratio = Math.max(0, Math.min(1, ratio));
+    if (isRtl()) ratio = 1 - ratio;
     return Math.round(1 + ratio * (viewerPageCount - 1));
   }
 
@@ -2412,7 +2436,9 @@
   libraryToggle.addEventListener("click", function () {
     var open = libraryPanel.classList.toggle("open");
     libraryToggle.setAttribute("aria-expanded", open ? "true" : "false");
-    if (open) startLibraryShuffle(); else stopLibraryShuffle();
+    // No need to start/stop the shuffle timer here -- it already runs
+    // continuously from tab-open (see init()); libraryShuffleTick() itself
+    // is a no-op while the panel is closed.
   });
 
   intervalRange.addEventListener("input", function () {
@@ -2444,6 +2470,8 @@
     // Slot contents (which page is "prev"/"next") depend on reading
     // direction, so an open viewer needs its slots re-targeted.
     if (viewer.classList.contains("open") && viewerPdf) syncViewerTrack(false);
+    // The page-jump slider's left/right layout also depends on direction.
+    if (sliderOpen) setSliderVisual(viewerPageNum);
   }
   directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
   directionRtlBtn.addEventListener("click", function () { setDirection("rtl"); });
@@ -2464,6 +2492,7 @@
       applySettingsToUI();
       renderLibrary();
       migrateLegacyPdfData();
+      startLibraryShuffle();
     }).catch(function (err) {
       console.error("init failed" + (isRetry ? " (retry)" : ""), err);
       if (!isRetry) {
