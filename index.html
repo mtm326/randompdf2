@@ -405,6 +405,7 @@
     border-bottom: 1px solid var(--border);
   }
   .field:last-of-type { border-bottom: none; }
+  .field.disabled { opacity: 0.45; pointer-events: none; }
   .field-row {
     display: flex;
     align-items: center;
@@ -981,7 +982,13 @@
   </div>
   <div class="field">
     <div class="field-row">
-      <span class="field-label">一覧の並び順をシャッフルする間隔</span>
+      <span class="field-label">一覧をランダムな順番で表示する</span>
+      <button class="switch" id="toggle-shuffle" role="switch" aria-checked="true"></button>
+    </div>
+  </div>
+  <div class="field" id="shuffle-minutes-field">
+    <div class="field-row">
+      <span class="field-label">シャッフルする間隔</span>
       <span class="field-value" id="shuffle-minutes-value">5分</span>
     </div>
     <input type="range" id="shuffle-minutes-range" min="1" max="30" step="1" value="5">
@@ -1204,7 +1211,7 @@
   // in this in-memory map for as long as the current app session is open.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5 };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true };
   function isRtl() { return settings.direction === "rtl"; }
   var importCancelRequested = false; // set by the "中止する" button during a bulk import
   var workerConfigured = false;
@@ -1258,6 +1265,8 @@
   var toggleCaption = $("toggle-caption");
   var directionLtrBtn = $("direction-ltr");
   var directionRtlBtn = $("direction-rtl");
+  var toggleShuffle = $("toggle-shuffle");
+  var shuffleMinutesField = $("shuffle-minutes-field");
   var shuffleMinutesRange = $("shuffle-minutes-range");
   var shuffleMinutesValue = $("shuffle-minutes-value");
 
@@ -1349,8 +1358,10 @@
   }
 
   // ---------------------------------------------------------------
-  // Library shuffle: while the "取り込み済みのPDFを見る" panel is open, its
-  // order reshuffles every so often for a bit of random-browsing variety --
+  // Library shuffle: can be turned off entirely via settings.shuffleEnabled
+  // (a switch in the settings sheet). When on, while the "取り込み済みの
+  // PDFを見る" panel is open, its order reshuffles every so often for a bit
+  // of random-browsing variety --
   // in-memory only (nothing written back to IndexedDB, so it's essentially
   // free), paused whenever it wouldn't be seen (panel closed, tab in the
   // background, the wall or a PDF viewer open on top of it) or while the
@@ -1364,6 +1375,7 @@
   var libraryGridTouchActive = false;
 
   function libraryShuffleTick() {
+    if (!settings.shuffleEnabled) return;
     if (document.hidden) return;
     if (!libraryPanel.classList.contains("open")) return;
     if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
@@ -1392,7 +1404,7 @@
   window.addEventListener("mouseup", function () { libraryGridTouchActive = false; });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stopLibraryShuffle();
-    else startLibraryShuffle();
+    else if (settings.shuffleEnabled) startLibraryShuffle();
   });
 
   // ---------------------------------------------------------------
@@ -1562,6 +1574,8 @@
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
+    toggleShuffle.setAttribute("aria-checked", settings.shuffleEnabled ? "true" : "false");
+    shuffleMinutesField.classList.toggle("disabled", !settings.shuffleEnabled);
   }
 
   function saveSetting(key, value) {
@@ -2481,6 +2495,13 @@
     saveSetting("shuffleMinutes", v);
     restartLibraryShuffleIfRunning();
   });
+  toggleShuffle.addEventListener("click", function () {
+    var v = toggleShuffle.getAttribute("aria-checked") !== "true";
+    toggleShuffle.setAttribute("aria-checked", v ? "true" : "false");
+    shuffleMinutesField.classList.toggle("disabled", !v);
+    saveSetting("shuffleEnabled", v);
+    if (v) startLibraryShuffle(); else stopLibraryShuffle();
+  });
 
   // ---------------------------------------------------------------
   // Init
@@ -2490,9 +2511,14 @@
       covers = res[0].sort(function (a, b) { return a.addedAt - b.addedAt; });
       res[1].forEach(function (row) { settings[row.key] = row.value; });
       applySettingsToUI();
+      // Randomize the initial display order too, not just the periodic
+      // reshuffle -- otherwise every fresh tab-open would start out sorted
+      // by import date until the first shuffle tick fired. Both only apply
+      // when the "ランダムな順番で表示する" setting is on.
+      if (settings.shuffleEnabled && covers.length > 1) covers = shuffle(covers);
       renderLibrary();
       migrateLegacyPdfData();
-      startLibraryShuffle();
+      if (settings.shuffleEnabled) startLibraryShuffle();
     }).catch(function (err) {
       console.error("init failed" + (isRetry ? " (retry)" : ""), err);
       if (!isRetry) {
