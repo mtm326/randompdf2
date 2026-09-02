@@ -958,20 +958,20 @@
 
   <div id="view-library" hidden style="display:flex; flex-direction:column; flex:1;">
     <div class="toolbar">
-      <button class="icon-btn" id="btn-add" aria-label="フォルダを追加">
-        <svg viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      </button>
-      <button class="icon-btn" id="btn-settings" aria-label="設定">
-        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M10 2.5v2.2M10 15.3v2.2M17.5 10h-2.2M4.7 10H2.5M15.1 4.9l-1.56 1.56M6.46 13.54L4.9 15.1M15.1 15.1l-1.56-1.56M6.46 6.46L4.9 4.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      </button>
-      <button class="icon-btn" id="btn-fav-filter" aria-label="お気に入りのみ表示" aria-pressed="false">
-        <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-      </button>
-      <span style="flex:1"></span>
       <button class="icon-btn danger" id="btn-clear" aria-label="すべて削除" disabled>
         <svg viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.3 4.5V3a1 1 0 0 1 1-1h1.4a1 1 0 0 1 1 1v1.5M4.6 4.5l.6 8.4a1 1 0 0 0 1 .93h3.6a1 1 0 0 0 1-.93l.6-8.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button class="link-btn" id="btn-add-single">1つずつ選ぶ</button>
+      <span style="flex:1"></span>
+      <button class="icon-btn" id="btn-add" aria-label="フォルダを追加">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-settings" aria-label="設定">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M8.7 2.3h2.6l.45 2.1c.5.18.97.43 1.4.74l2.03-.68 1.3 2.26-1.6 1.42c.08.53.08 1.07 0 1.6l1.6 1.42-1.3 2.26-2.03-.68c-.43.31-.9.56-1.4.74l-.45 2.1H8.7l-.45-2.1a5.6 5.6 0 0 1-1.4-.74l-2.03.68-1.3-2.26 1.6-1.42a5.7 5.7 0 0 1 0-1.6L3.52 6.72l1.3-2.26 2.03.68c.43-.31.9-.56 1.4-.74l.45-2.1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.3" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-fav-filter" aria-label="お気に入りのみ表示" aria-pressed="false">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
     </div>
 
     <div class="footer-bar footer-bar-top">
@@ -1239,6 +1239,19 @@
     });
   }
 
+  // Just the keys -- one cheap readonly transaction, no record payloads
+  // (important for "pdfdata", whose values are whole PDF blobs).
+  function idbAllKeys(storeName) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(storeName, "readonly");
+        var req = tx.objectStore(storeName).getAllKeys();
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  }
+
   function idbGet(storeName, key) {
     return openDB().then(function (db) {
       return new Promise(function (resolve, reject) {
@@ -1288,9 +1301,10 @@
   // ---------------------------------------------------------------
   // State
   // ---------------------------------------------------------------
-  // persisted cover record: { id, name, thumb (dataURL jpeg), addedAt }
-  // the actual PDF bytes are never written to IndexedDB -- they only live
-  // in this in-memory map for as long as the current app session is open.
+  // persisted cover record: { id, name, thumb (dataURL jpeg), addedAt, folder }
+  // The PDF bytes themselves are kept as Blobs in the separate "pdfdata"
+  // store (see persistPdfBlob), keyed by the same id; sessionPdfCache is
+  // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
   var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true, libraryViewMode: "flat", folderPreviewRotate: true };
@@ -1374,7 +1388,13 @@
   function buildCard(c) {
     var card = document.createElement("div");
     card.className = "card";
+    card.dataset.id = String(c.id);
     var img = document.createElement("img");
+    // Let the browser decode thumbnails off the main thread and skip the
+    // ones scrolled out of view -- a few hundred JPEG decodes in one go is
+    // what made big libraries stutter when the panel opened.
+    img.decoding = "async";
+    img.loading = "lazy";
     img.src = c.thumb;
     img.alt = c.name;
     card.appendChild(img);
@@ -1416,6 +1436,7 @@
 
     var img = document.createElement("img");
     var initial = members[0];
+    img.decoding = "async";
     img.src = initial.thumb;
     img.alt = folderName;
     img.dataset.coverId = String(initial.id);
@@ -1444,20 +1465,20 @@
     return card;
   }
 
-  function appendAddTile() {
+  function appendAddTile(parent) {
     var addTile = document.createElement("button");
     addTile.className = "add-tile";
     addTile.setAttribute("aria-label", "PDFを追加");
     addTile.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
     addTile.addEventListener("click", function () { fileInput.click(); });
-    grid.appendChild(addTile);
+    parent.appendChild(addTile);
   }
 
-  function renderEmptyFavMessage() {
+  function renderEmptyFavMessage(parent) {
     var empty = document.createElement("p");
     empty.className = "fav-empty";
     empty.textContent = "お気に入りに登録したPDFはまだありません。";
-    grid.appendChild(empty);
+    parent.appendChild(empty);
   }
 
   // Groups a list of covers by their .folder field, preserving each
@@ -1493,48 +1514,62 @@
 
     var visible = favFilterActive ? covers.filter(function (c) { return !!c.favorite; }) : covers;
 
-    grid.innerHTML = "";
     stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
+
+    // Build the whole grid off-DOM and swap it in with a single append, so
+    // the browser lays out and paints once instead of once per card.
+    var frag = document.createDocumentFragment();
 
     if (folderMode && currentFolderView !== null) {
       // --- Drilled into one folder: flat list of just its PDFs ---
       var folderCovers = visible.filter(function (c) { return c.folder === currentFolderView; });
       folderBreadcrumb.hidden = false;
       folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
-      if (favFilterActive && folderCovers.length === 0) renderEmptyFavMessage();
-      folderCovers.forEach(function (c) { grid.appendChild(buildCard(c)); });
-      appendAddTile();
-      return;
-    }
-
-    folderBreadcrumb.hidden = true;
-
-    if (!folderMode) {
+      if (favFilterActive && folderCovers.length === 0) renderEmptyFavMessage(frag);
+      folderCovers.forEach(function (c) { frag.appendChild(buildCard(c)); });
+      appendAddTile(frag);
+    } else if (!folderMode) {
       // --- Flat mode: every PDF as one grid, ignoring folder grouping ---
-      if (favFilterActive && visible.length === 0) renderEmptyFavMessage();
-      visible.forEach(function (c) { grid.appendChild(buildCard(c)); });
-      appendAddTile();
-      return;
+      folderBreadcrumb.hidden = true;
+      if (favFilterActive && visible.length === 0) renderEmptyFavMessage(frag);
+      visible.forEach(function (c) { frag.appendChild(buildCard(c)); });
+      appendAddTile(frag);
+    } else {
+      // --- Folder mode, top level: one tile per folder + ungrouped singles ---
+      folderBreadcrumb.hidden = true;
+      var grouped = groupCoversByFolder(visible);
+      if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
+        renderEmptyFavMessage(frag);
+      }
+      grouped.order.forEach(function (folderName) {
+        frag.appendChild(buildFolderTile(folderName, grouped.groups[folderName]));
+      });
+      grouped.ungrouped.forEach(function (c) { frag.appendChild(buildCard(c)); });
+      appendAddTile(frag);
     }
 
-    // --- Folder mode, top level: one tile per folder + ungrouped singles ---
-    var grouped = groupCoversByFolder(visible);
-    if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
-      renderEmptyFavMessage();
-    }
-    grouped.order.forEach(function (folderName) {
-      grid.appendChild(buildFolderTile(folderName, grouped.groups[folderName]));
-    });
-    grouped.ungrouped.forEach(function (c) { grid.appendChild(buildCard(c)); });
-    appendAddTile();
-    if (settings.folderPreviewRotate) startFolderTileRotation();
+    grid.innerHTML = "";
+    grid.appendChild(frag);
+    if (folderMode && currentFolderView === null && settings.folderPreviewRotate) startFolderTileRotation();
   }
 
   function toggleFavorite(id) {
     var c = covers.filter(function (x) { return x.id === id; })[0];
     if (!c) return;
     c.favorite = !c.favorite;
-    renderLibrary();
+    // Flip just this card's star in place. A full renderLibrary() here used
+    // to rebuild (and re-animate) every card for a single tap, and reset the
+    // folder-tile rotation timers. The one case that still needs a rebuild
+    // is the favorites-only filter, where un-starring makes the card vanish.
+    var card = grid.querySelector('.card[data-id="' + c.id + '"]');
+    if (favFilterActive || !card) {
+      renderLibrary();
+    } else {
+      var fav = card.querySelector(".fav");
+      fav.classList.toggle("active", c.favorite);
+      fav.setAttribute("aria-label", c.favorite ? "お気に入りから外す" : "お気に入りに追加");
+      fav.setAttribute("aria-pressed", c.favorite ? "true" : "false");
+    }
     syncViewerFavButton();
     idbPut("covers", c);
   }
@@ -1624,8 +1659,17 @@
   }
   function folderTileTick() {
     if (document.hidden) return;
-    if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
     var now = performance.now();
+    if (!libraryPanel.classList.contains("open")) {
+      // Collapsed -> nobody would see a swap, so skip the image decode. Push
+      // any tile that came due while hidden out again (rather than leaving
+      // it overdue) so they don't all flip at once the moment the panel opens.
+      folderTiles.forEach(function (tile) {
+        if (now >= tile.nextSwapAt) tile.nextSwapAt = now + jitteredDuration();
+      });
+      return;
+    }
+    if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
     folderTiles.forEach(function (tile) {
       if (now >= tile.nextSwapAt) {
         rotateFolderTileCover(tile);
@@ -1731,17 +1775,20 @@
     covers.forEach(function (c) { existingByName[c.name] = c; });
 
     var toAdd = [];
+    var matched = []; // [cover, file] pairs for PDFs already in the library
+    var folderChanged = false;
     files.forEach(function (f) {
       var existing = existingByName[fileBaseName(f.name)];
       if (existing) {
         sessionPdfCache.set(existing.id, f);
-        persistPdfBlob(existing.id, f);
+        matched.push([existing, f]);
         // Re-picking a folder can retroactively teach an already-imported
         // cover which subfolder it lives in (e.g. it was first added one
         // file at a time, or the folder's layout changed since).
         var folder = folderFromFile(f);
-        if (folder !== existing.folder) {
+        if (folder !== (existing.folder || "")) {
           existing.folder = folder;
+          folderChanged = true;
           idbPut("covers", existing);
         }
       } else {
@@ -1749,8 +1796,28 @@
       }
     });
 
+    // Re-picking a folder used to rewrite every already-imported PDF's bytes
+    // back into IndexedDB -- for a big library that's hundreds of MB of
+    // pointless disk I/O on each re-pick. Now only the ones whose bytes are
+    // actually missing (never saved, or an earlier save failed on quota)
+    // get written.
+    if (matched.length > 0) {
+      idbAllKeys("pdfdata").then(function (keys) {
+        var have = {};
+        keys.forEach(function (k) { have[k] = true; });
+        matched.forEach(function (pair) {
+          if (!have[pair[0].id]) persistPdfBlob(pair[0].id, pair[1]);
+        });
+      }).catch(function (err) {
+        console.error("pdfdata key scan failed, falling back to full persist", err);
+        matched.forEach(function (pair) { persistPdfBlob(pair[0].id, pair[1]); });
+      });
+    }
+
     if (toAdd.length === 0) {
-      renderLibrary();
+      // Only the folder assignments can have changed -- if none did, the
+      // grid is already correct and doesn't need a full rebuild.
+      if (folderChanged) renderLibrary();
       return;
     }
 
