@@ -276,7 +276,7 @@
   }
   .card .rm {
     position: absolute;
-    top: 6px; right: 6px;
+    top: 6px; left: 6px;
     width: 22px; height: 22px;
     border-radius: 50%;
     background: rgba(20,20,24,0.55);
@@ -290,7 +290,7 @@
   .card .rm svg { width: 11px; height: 11px; }
   .card .fav {
     position: absolute;
-    top: 6px; left: 6px;
+    top: 6px; right: 6px;
     width: 22px; height: 22px;
     border-radius: 50%;
     background: rgba(20,20,24,0.55);
@@ -304,6 +304,45 @@
   .card .fav svg { width: 13px; height: 13px; }
   .card .fav.active { color: #ffcb45; }
   .card .fav.active svg path { fill: currentColor; }
+
+  /* フォルダ表示: a stack-of-cards look (offset shadow layers) so a folder
+     tile reads as "a group" at a glance, distinct from a single PDF card. */
+  .folder-card {
+    box-shadow:
+      0 6px 16px -10px var(--shadow),
+      6px 6px 0 -4px var(--bg-card), 6px 6px 0 -3px var(--border),
+      -6px 6px 0 -4px var(--bg-card), -6px 6px 0 -3px var(--border);
+  }
+  .folder-card img { transition: opacity 0.22s ease; }
+  .folder-card .badge {
+    position: absolute;
+    top: 6px; right: 6px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: rgba(20,20,24,0.55);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+  .folder-card .badge svg { width: 12px; height: 12px; }
+
+  .folder-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 2px;
+  }
+  .folder-breadcrumb .link-btn { padding: 6px 0; flex: none; }
+  .folder-breadcrumb-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   .add-tile {
     appearance: none;
@@ -924,6 +963,10 @@
     </button>
 
     <div class="library-panel" id="library-panel">
+      <div class="folder-breadcrumb" id="folder-breadcrumb" hidden>
+        <button class="link-btn" id="folder-back-btn">← 一覧に戻る</button>
+        <span class="folder-breadcrumb-label" id="folder-breadcrumb-label"></span>
+      </div>
       <div class="grid" id="grid"></div>
     </div>
   </div>
@@ -992,6 +1035,21 @@
       <span class="field-value" id="shuffle-minutes-value">5分</span>
     </div>
     <input type="range" id="shuffle-minutes-range" min="1" max="30" step="1" value="5">
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">一覧の表示方法</span>
+    </div>
+    <div class="segmented" id="library-view-toggle" role="group" aria-label="一覧の表示方法">
+      <button type="button" id="library-view-flat" aria-pressed="true">すべてのPDF</button>
+      <button type="button" id="library-view-folder" aria-pressed="false">フォルダごと</button>
+    </div>
+  </div>
+  <div class="field" id="folder-preview-rotate-field">
+    <div class="field-row">
+      <span class="field-label">フォルダの表紙を自動で切り替える</span>
+      <button class="switch" id="toggle-folder-preview-rotate" role="switch" aria-checked="true"></button>
+    </div>
   </div>
 </div>
 
@@ -1211,7 +1269,7 @@
   // in this in-memory map for as long as the current app session is open.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true, libraryViewMode: "flat", folderPreviewRotate: true };
   function isRtl() { return settings.direction === "rtl"; }
   var importCancelRequested = false; // set by the "中止する" button during a bulk import
   var workerConfigured = false;
@@ -1269,10 +1327,134 @@
   var shuffleMinutesField = $("shuffle-minutes-field");
   var shuffleMinutesRange = $("shuffle-minutes-range");
   var shuffleMinutesValue = $("shuffle-minutes-value");
+  var libraryViewFlatBtn = $("library-view-flat");
+  var libraryViewFolderBtn = $("library-view-folder");
+  var folderPreviewRotateField = $("folder-preview-rotate-field");
+  var toggleFolderPreviewRotate = $("toggle-folder-preview-rotate");
+  var folderBreadcrumb = $("folder-breadcrumb");
+  var folderBreadcrumbLabel = $("folder-breadcrumb-label");
+  var folderBackBtn = $("folder-back-btn");
 
   // ---------------------------------------------------------------
   // Rendering: library view
   // ---------------------------------------------------------------
+  // When settings.libraryViewMode is "folder", the top level groups covers
+  // by their .folder field (set at import time from the picked folder's
+  // subfolder structure -- see folderFromFile()); covers with no folder
+  // (single-file picks, or files that sat directly in the root of the
+  // picked folder) show as ordinary individual cards alongside the group
+  // tiles. Tapping a group tile drills into currentFolderView, showing just
+  // that folder's PDFs as a flat list with a back link above the grid.
+  var currentFolderView = null; // folder name string, or null = top level
+
+  function buildCard(c) {
+    var card = document.createElement("div");
+    card.className = "card";
+    var img = document.createElement("img");
+    img.src = c.thumb;
+    img.alt = c.name;
+    card.appendChild(img);
+
+    var cap = document.createElement("div");
+    cap.className = "cap";
+    cap.textContent = c.name;
+    card.appendChild(cap);
+
+    var fav = document.createElement("button");
+    fav.className = "fav" + (c.favorite ? " active" : "");
+    fav.setAttribute("aria-label", c.favorite ? "お気に入りから外す" : "お気に入りに追加");
+    fav.setAttribute("aria-pressed", c.favorite ? "true" : "false");
+    fav.innerHTML = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+    fav.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      toggleFavorite(c.id);
+    });
+    card.appendChild(fav);
+
+    var rm = document.createElement("button");
+    rm.className = "rm";
+    rm.setAttribute("aria-label", "削除");
+    rm.innerHTML = '<svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    rm.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (!confirm("「" + c.name + "」を削除します。よろしいですか？")) return;
+      removeCover(c.id);
+    });
+    card.appendChild(rm);
+
+    card.addEventListener("click", function () { openViewer(c); });
+    return card;
+  }
+
+  function buildFolderTile(folderName, members) {
+    var card = document.createElement("div");
+    card.className = "card folder-card";
+
+    var img = document.createElement("img");
+    var initial = members[0];
+    img.src = initial.thumb;
+    img.alt = folderName;
+    img.dataset.coverId = String(initial.id);
+    card.appendChild(img);
+
+    var badge = document.createElement("div");
+    badge.className = "badge";
+    badge.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3l1.2 1.6h4.8A1.5 1.5 0 0 1 14 7.1v5.4A1.5 1.5 0 0 1 12.5 14h-9A1.5 1.5 0 0 1 2 12.5v-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+    card.appendChild(badge);
+
+    var cap = document.createElement("div");
+    cap.className = "cap";
+    cap.textContent = folderName + "（" + members.length + "冊）";
+    card.appendChild(cap);
+
+    card.addEventListener("click", function () {
+      currentFolderView = folderName;
+      renderLibrary();
+    });
+
+    folderTiles.push({
+      imgEl: img,
+      members: members,
+      nextSwapAt: (typeof performance !== "undefined" ? performance.now() : Date.now()) + Math.random() * settings.interval * 1000 + 400,
+    });
+    return card;
+  }
+
+  function appendAddTile() {
+    var addTile = document.createElement("button");
+    addTile.className = "add-tile";
+    addTile.setAttribute("aria-label", "PDFを追加");
+    addTile.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    addTile.addEventListener("click", function () { fileInput.click(); });
+    grid.appendChild(addTile);
+  }
+
+  function renderEmptyFavMessage() {
+    var empty = document.createElement("p");
+    empty.className = "fav-empty";
+    empty.textContent = "お気に入りに登録したPDFはまだありません。";
+    grid.appendChild(empty);
+  }
+
+  // Groups a list of covers by their .folder field, preserving each
+  // folder's first-seen order in the input list (so a shuffled covers
+  // array naturally produces a shuffled folder-tile order too, with no
+  // extra bookkeeping needed).
+  function groupCoversByFolder(list) {
+    var order = [];
+    var groups = {};
+    var ungrouped = [];
+    list.forEach(function (c) {
+      if (c.folder) {
+        if (!groups[c.folder]) { groups[c.folder] = []; order.push(c.folder); }
+        groups[c.folder].push(c);
+      } else {
+        ungrouped.push(c);
+      }
+    });
+    return { order: order, groups: groups, ungrouped: ungrouped };
+  }
+
   function renderLibrary() {
     var has = covers.length > 0;
     viewEmpty.hidden = has;
@@ -1282,62 +1464,46 @@
     btnClear.disabled = covers.length === 0;
     libraryToggleLabel.textContent = "取り込み済みのPDFを見る（" + covers.length + "冊）";
 
+    var folderMode = settings.libraryViewMode === "folder";
+    if (!folderMode) currentFolderView = null;
+
     var visible = favFilterActive ? covers.filter(function (c) { return !!c.favorite; }) : covers;
 
     grid.innerHTML = "";
+    stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
 
-    if (favFilterActive && visible.length === 0) {
-      var empty = document.createElement("p");
-      empty.className = "fav-empty";
-      empty.textContent = "お気に入りに登録したPDFはまだありません。";
-      grid.appendChild(empty);
+    if (folderMode && currentFolderView !== null) {
+      // --- Drilled into one folder: flat list of just its PDFs ---
+      var folderCovers = visible.filter(function (c) { return c.folder === currentFolderView; });
+      folderBreadcrumb.hidden = false;
+      folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
+      if (favFilterActive && folderCovers.length === 0) renderEmptyFavMessage();
+      folderCovers.forEach(function (c) { grid.appendChild(buildCard(c)); });
+      appendAddTile();
+      return;
     }
 
-    visible.forEach(function (c) {
-      var card = document.createElement("div");
-      card.className = "card";
-      var img = document.createElement("img");
-      img.src = c.thumb;
-      img.alt = c.name;
-      card.appendChild(img);
+    folderBreadcrumb.hidden = true;
 
-      var cap = document.createElement("div");
-      cap.className = "cap";
-      cap.textContent = c.name;
-      card.appendChild(cap);
+    if (!folderMode) {
+      // --- Flat mode: every PDF as one grid, ignoring folder grouping ---
+      if (favFilterActive && visible.length === 0) renderEmptyFavMessage();
+      visible.forEach(function (c) { grid.appendChild(buildCard(c)); });
+      appendAddTile();
+      return;
+    }
 
-      var fav = document.createElement("button");
-      fav.className = "fav" + (c.favorite ? " active" : "");
-      fav.setAttribute("aria-label", c.favorite ? "お気に入りから外す" : "お気に入りに追加");
-      fav.setAttribute("aria-pressed", c.favorite ? "true" : "false");
-      fav.innerHTML = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
-      fav.addEventListener("click", function (ev) {
-        ev.stopPropagation();
-        toggleFavorite(c.id);
-      });
-      card.appendChild(fav);
-
-      var rm = document.createElement("button");
-      rm.className = "rm";
-      rm.setAttribute("aria-label", "削除");
-      rm.innerHTML = '<svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-      rm.addEventListener("click", function (ev) {
-        ev.stopPropagation();
-        removeCover(c.id);
-      });
-      card.appendChild(rm);
-
-      card.addEventListener("click", function () { openViewer(c); });
-
-      grid.appendChild(card);
+    // --- Folder mode, top level: one tile per folder + ungrouped singles ---
+    var grouped = groupCoversByFolder(visible);
+    if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
+      renderEmptyFavMessage();
+    }
+    grouped.order.forEach(function (folderName) {
+      grid.appendChild(buildFolderTile(folderName, grouped.groups[folderName]));
     });
-
-    var addTile = document.createElement("button");
-    addTile.className = "add-tile";
-    addTile.setAttribute("aria-label", "PDFを追加");
-    addTile.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-    addTile.addEventListener("click", function () { fileInput.click(); });
-    grid.appendChild(addTile);
+    grouped.ungrouped.forEach(function (c) { grid.appendChild(buildCard(c)); });
+    appendAddTile();
+    if (settings.folderPreviewRotate) startFolderTileRotation();
   }
 
   function toggleFavorite(id) {
@@ -1408,6 +1574,54 @@
   });
 
   // ---------------------------------------------------------------
+  // Folder-tile cover rotation: in folder view mode, each top-level folder
+  // tile can cycle through that folder's covers every so often (toggled via
+  // settings.folderPreviewRotate), reusing the wall's per-tile timing style
+  // (see jitteredDuration() below) so the cadence matches the existing
+  // "1枚あたりの表示間隔" setting instead of adding a whole new one.
+  // folderTiles is rebuilt fresh by renderLibrary() on every render, so the
+  // timer only ever touches tiles that are actually on screen right now.
+  // ---------------------------------------------------------------
+  var folderTiles = [];
+  var folderTileTimer = null;
+
+  function rotateFolderTileCover(tile) {
+    if (tile.members.length < 2) return;
+    var currentId = tile.imgEl.dataset.coverId;
+    var candidates = tile.members.filter(function (c) { return String(c.id) !== currentId; });
+    var next = candidates.length > 0 ? candidates[Math.floor(Math.random() * candidates.length)] : tile.members[0];
+    tile.imgEl.style.opacity = "0";
+    setTimeout(function () {
+      tile.imgEl.src = next.thumb;
+      tile.imgEl.alt = next.name;
+      tile.imgEl.dataset.coverId = String(next.id);
+      tile.imgEl.style.opacity = "1";
+    }, 220);
+  }
+  function folderTileTick() {
+    if (document.hidden) return;
+    if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
+    var now = performance.now();
+    folderTiles.forEach(function (tile) {
+      if (now >= tile.nextSwapAt) {
+        rotateFolderTileCover(tile);
+        tile.nextSwapAt = now + jitteredDuration();
+      }
+    });
+  }
+  function startFolderTileRotation() {
+    if (folderTileTimer) return;
+    if (folderTiles.length === 0) return;
+    folderTileTimer = setInterval(folderTileTick, 1000);
+  }
+  function stopFolderTileRotation() {
+    folderTiles = [];
+    if (!folderTileTimer) return;
+    clearInterval(folderTileTimer);
+    folderTileTimer = null;
+  }
+
+  // ---------------------------------------------------------------
   // Adding PDFs -> render page 1 for thumbnail
   // ---------------------------------------------------------------
   // sessionPdfCache holds File/Blob *references*, not their decoded bytes.
@@ -1418,6 +1632,21 @@
   // materialize() below is what actually reads bytes, and only on demand.
   function fileBaseName(name) {
     return name.replace(/\.pdf$/i, "");
+  }
+
+  // Derives a "folder group" from a folder-picked file's webkitRelativePath
+  // (e.g. "PickedRoot/AuthorA/book1.pdf"). The first segment is just the
+  // name of the folder the user picked (not meaningful for grouping) and
+  // the last is the filename -- everything in between is the subfolder
+  // path, which is what groups PDFs together in folder view mode. A file
+  // that sits directly in the picked root (or one picked individually via
+  // the single-file input, which never sets webkitRelativePath at all)
+  // has no subfolder, so it comes back as "" -- ungrouped.
+  function folderFromFile(file) {
+    var rel = file.webkitRelativePath || "";
+    if (!rel) return "";
+    var parts = rel.split("/");
+    return parts.slice(1, -1).join("/");
   }
 
   function materialize(entry) {
@@ -1483,6 +1712,14 @@
       if (existing) {
         sessionPdfCache.set(existing.id, f);
         persistPdfBlob(existing.id, f);
+        // Re-picking a folder can retroactively teach an already-imported
+        // cover which subfolder it lives in (e.g. it was first added one
+        // file at a time, or the folder's layout changed since).
+        var folder = folderFromFile(f);
+        if (folder !== existing.folder) {
+          existing.folder = folder;
+          idbPut("covers", existing);
+        }
       } else {
         toAdd.push(f);
       }
@@ -1516,7 +1753,7 @@
       materialize(file)
         .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
         .then(function (dataUrl) {
-          var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now() };
+          var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now(), folder: folderFromFile(file) };
           return idbPut("covers", record).then(function (newId) {
             sessionPdfCache.set(newId, file);
             return persistPdfBlob(newId, file).then(function () {
@@ -1576,6 +1813,11 @@
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
     toggleShuffle.setAttribute("aria-checked", settings.shuffleEnabled ? "true" : "false");
     shuffleMinutesField.classList.toggle("disabled", !settings.shuffleEnabled);
+    var folderView = settings.libraryViewMode === "folder";
+    libraryViewFlatBtn.setAttribute("aria-pressed", folderView ? "false" : "true");
+    libraryViewFolderBtn.setAttribute("aria-pressed", folderView ? "true" : "false");
+    toggleFolderPreviewRotate.setAttribute("aria-checked", settings.folderPreviewRotate ? "true" : "false");
+    folderPreviewRotateField.classList.toggle("disabled", !folderView);
   }
 
   function saveSetting(key, value) {
@@ -2435,6 +2677,7 @@
     if (!confirm("本当に削除してよろしいですか？この操作は取り消せません。")) return;
     covers = [];
     sessionPdfCache.clear();
+    currentFolderView = null;
     renderLibrary();
     idbClear("covers");
     idbClear("pdfdata");
@@ -2453,6 +2696,17 @@
     // No need to start/stop the shuffle timer here -- it already runs
     // continuously from tab-open (see init()); libraryShuffleTick() itself
     // is a no-op while the panel is closed.
+    // Closing while drilled into a folder resets back to the top level, so
+    // the panel always reopens at the folder list rather than wherever it
+    // was last left.
+    if (!open && currentFolderView !== null) {
+      currentFolderView = null;
+      renderLibrary();
+    }
+  });
+  folderBackBtn.addEventListener("click", function () {
+    currentFolderView = null;
+    renderLibrary();
   });
 
   intervalRange.addEventListener("input", function () {
@@ -2501,6 +2755,23 @@
     shuffleMinutesField.classList.toggle("disabled", !v);
     saveSetting("shuffleEnabled", v);
     if (v) startLibraryShuffle(); else stopLibraryShuffle();
+  });
+  function setLibraryViewMode(mode) {
+    if (settings.libraryViewMode === mode) return;
+    saveSetting("libraryViewMode", mode);
+    libraryViewFlatBtn.setAttribute("aria-pressed", mode === "flat" ? "true" : "false");
+    libraryViewFolderBtn.setAttribute("aria-pressed", mode === "folder" ? "true" : "false");
+    folderPreviewRotateField.classList.toggle("disabled", mode !== "folder");
+    currentFolderView = null;
+    renderLibrary();
+  }
+  libraryViewFlatBtn.addEventListener("click", function () { setLibraryViewMode("flat"); });
+  libraryViewFolderBtn.addEventListener("click", function () { setLibraryViewMode("folder"); });
+  toggleFolderPreviewRotate.addEventListener("click", function () {
+    var v = toggleFolderPreviewRotate.getAttribute("aria-checked") !== "true";
+    toggleFolderPreviewRotate.setAttribute("aria-checked", v ? "true" : "false");
+    saveSetting("folderPreviewRotate", v);
+    if (v) startFolderTileRotation(); else stopFolderTileRotation();
   });
 
   // ---------------------------------------------------------------
