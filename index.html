@@ -448,18 +448,65 @@
     box-shadow: 0 -20px 40px -20px var(--shadow);
   }
   .sheet.open { transform: translateY(0); }
+  /* The sheet has grown to nine settings -- taller than a phone screen. Cap
+     it and scroll inside so its header (with the close button) is always on
+     screen and a strip of backdrop stays tappable above it; without this the
+     top of the sheet was pushed off-screen and there was no way to close it. */
+  .sheet {
+    max-height: calc(100vh - 56px);
+    max-height: calc(100dvh - 56px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-top: 0;
+  }
+  .sheet-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-elevated);
+    padding-top: 10px;
+    margin: 0 -22px 4px;
+    padding-left: 22px;
+    padding-right: 22px;
+    touch-action: none; /* swipe-down-to-close is handled in JS */
+  }
   .sheet .grabber {
     width: 36px; height: 4px;
     border-radius: 4px;
     background: var(--border);
-    margin: 10px auto 18px;
+    margin: 0 auto 14px;
+  }
+  .sheet-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
   }
   .sheet h3 {
     font-family: var(--font-display);
     font-size: 1.15rem;
     font-weight: 500;
-    margin: 0 0 16px;
+    margin: 0;
   }
+  .sheet-close {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .sheet-close svg { width: 12px; height: 12px; }
   .field {
     display: flex;
     flex-direction: column;
@@ -1008,9 +1055,17 @@
 </div>
 
 <div class="sheet-backdrop" id="sheet-backdrop"></div>
-<div class="sheet" id="sheet">
-  <div class="grabber"></div>
-  <h3>表示の設定</h3>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  <div class="sheet-head" id="sheet-head">
+    <div class="grabber"></div>
+    <div class="sheet-title-row">
+      <h3 id="sheet-title">表示の設定</h3>
+      <button type="button" class="sheet-close" id="sheet-close" aria-label="設定を閉じる">
+        <svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        閉じる
+      </button>
+    </div>
+  </div>
   <div class="field">
     <div class="field-row">
       <span class="field-label">同時に表示する枚数</span>
@@ -1352,6 +1407,8 @@
 
   var sheet = $("sheet");
   var sheetBackdrop = $("sheet-backdrop");
+  var sheetHead = $("sheet-head");
+  var sheetClose = $("sheet-close");
   var intervalRange = $("interval-range");
   var intervalValue = $("interval-value");
   var countRange = $("count-range");
@@ -1523,6 +1580,12 @@
     if (folderMode && currentFolderView !== null) {
       // --- Drilled into one folder: flat list of just its PDFs ---
       var folderCovers = visible.filter(function (c) { return c.folder === currentFolderView; });
+      // Random order is for browsing the top level; once you've opened a
+      // folder you want its contents in a predictable order -- by file name,
+      // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
+      folderCovers.sort(function (a, b) {
+        return a.name.localeCompare(b.name, "ja", { numeric: true, sensitivity: "base" });
+      });
       folderBreadcrumb.hidden = false;
       folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
       if (favFilterActive && folderCovers.length === 0) renderEmptyFavMessage(frag);
@@ -1605,6 +1668,10 @@
     if (!libraryPanel.classList.contains("open")) return;
     if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
     if (libraryGridTouchActive) return;
+    // Inside a folder the PDFs are listed in name order (see renderLibrary)
+    // and should stay put -- reshuffling would also yank the scroll position.
+    // Shuffling only matters for the top level (folder tiles / all PDFs).
+    if (currentFolderView !== null) return;
     if (covers.length < 2) return;
     covers = shuffle(covers);
     renderLibrary();
@@ -2776,6 +2843,39 @@
   btnStart.addEventListener("click", startWall);
   btnSettings.addEventListener("click", openSheet);
   sheetBackdrop.addEventListener("click", closeSheet);
+  sheetClose.addEventListener("click", closeSheet);
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && sheet.classList.contains("open")) closeSheet();
+  });
+  // Swipe down on the sheet's header (grabber + title) to dismiss it, the
+  // way iOS sheets work. The header only -- the settings body scrolls.
+  (function () {
+    var startY = null;
+    sheetHead.addEventListener("touchstart", function (ev) {
+      startY = ev.touches[0].clientY;
+    }, { passive: true });
+    sheetHead.addEventListener("touchmove", function (ev) {
+      if (startY === null) return;
+      var dy = ev.touches[0].clientY - startY;
+      if (dy > 0) {
+        sheet.style.transition = "none"; // follow the finger directly
+        sheet.style.transform = "translateY(" + dy + "px)";
+      }
+    }, { passive: true });
+    function endDrag(dy) {
+      startY = null;
+      sheet.style.transition = "";
+      sheet.style.transform = "";
+      if (dy > 60) closeSheet();
+    }
+    sheetHead.addEventListener("touchend", function (ev) {
+      if (startY === null) return;
+      endDrag(ev.changedTouches[0].clientY - startY);
+    });
+    sheetHead.addEventListener("touchcancel", function () {
+      if (startY !== null) endDrag(0);
+    });
+  })();
   btnFavFilter.addEventListener("click", function () {
     favFilterActive = !favFilterActive;
     btnFavFilter.setAttribute("aria-pressed", favFilterActive ? "true" : "false");
