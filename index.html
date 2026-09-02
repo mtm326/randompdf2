@@ -305,28 +305,52 @@
   .card .fav.active { color: #ffcb45; }
   .card .fav.active svg path { fill: currentColor; }
 
-  /* フォルダ表示: a stack-of-cards look (offset shadow layers) so a folder
-     tile reads as "a group" at a glance, distinct from a single PDF card. */
+  /* Folder tiles always render before individual-file cards in folder-view
+     mode (guaranteed both by JS append order in renderLibrary() and, as a
+     belt-and-suspenders measure, by this CSS grid `order` so it holds even
+     if a card is ever appended out of sequence). */
+  .card { order: 1; }
+  .folder-card { order: 0; }
+  .add-tile { order: 2; }
+
+  /* フォルダ表示: an accent-colored border + a stack-of-cards look (offset
+     shadow layers) + a solid accent badge, so a folder tile reads clearly
+     as "a group" at a glance, distinct from a single PDF card. */
   .folder-card {
+    border-color: var(--accent);
+    border-width: 2px;
     box-shadow:
       0 6px 16px -10px var(--shadow),
-      6px 6px 0 -4px var(--bg-card), 6px 6px 0 -3px var(--border),
-      -6px 6px 0 -4px var(--bg-card), -6px 6px 0 -3px var(--border);
+      6px 6px 0 -4px var(--bg-card), 6px 6px 0 -3px var(--accent),
+      -6px 6px 0 -4px var(--bg-card), -6px 6px 0 -3px var(--accent);
   }
   .folder-card img { transition: opacity 0.22s ease; }
   .folder-card .badge {
     position: absolute;
     top: 6px; right: 6px;
-    width: 22px; height: 22px;
+    width: 24px; height: 24px;
     border-radius: 50%;
-    background: rgba(20,20,24,0.55);
-    color: #fff;
+    background: var(--accent);
+    color: var(--accent-contrast);
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(2px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
-  .folder-card .badge svg { width: 12px; height: 12px; }
+  .folder-card .badge svg { width: 13px; height: 13px; }
+  .folder-card .cap {
+    background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2) 65%, transparent);
+    font-weight: 600;
+  }
+  .folder-card .cap::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 4px;
+    vertical-align: middle;
+  }
 
   .folder-breadcrumb {
     display: flex;
