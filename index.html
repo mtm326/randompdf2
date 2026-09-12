@@ -274,20 +274,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .card .rm {
-    position: absolute;
-    top: 6px; left: 6px;
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: rgba(20,20,24,0.55);
-    color: #fff;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(2px);
-  }
-  .card .rm svg { width: 11px; height: 11px; }
   .card .fav {
     position: absolute;
     top: 6px; right: 6px;
@@ -304,6 +290,58 @@
   .card .fav svg { width: 13px; height: 13px; }
   .card .fav.active { color: #ffcb45; }
   .card .fav.active svg path { fill: currentColor; }
+
+  /* ---- selection mode (選択して削除) ---- */
+  .grid.selecting .fav { display: none; }
+  .card .check {
+    position: absolute;
+    top: 6px; left: 6px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.9);
+    background: rgba(20,20,24,0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
+  .card .check svg { width: 12px; height: 12px; opacity: 0; }
+  .grid.selecting .card .check { display: flex; }
+  .card.selected { outline: 3px solid #e2574c; outline-offset: -3px; }
+  .card.selected .check { background: #e2574c; border-color: #fff; }
+  .card.selected .check svg { opacity: 1; }
+  .grid.selecting .card::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.18);
+    pointer-events: none;
+  }
+  .grid.selecting .card.selected::after { background: rgba(226,87,76,0.22); }
+  .grid.selecting .add-tile { display: none; }
+
+  .select-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    border-radius: 14px;
+    background: var(--bg-elevated);
+    border: 1px solid #e2574c;
+  }
+  .select-bar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .select-bar-title { font-size: 0.9rem; font-weight: 600; }
+  .select-bar-count { font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .select-bar .btn { padding: 10px 14px; font-size: 0.85rem; flex: 1; }
+  .btn-danger { background: #e2574c; color: #fff; }
+  .btn-danger-ghost { background: transparent; color: #e2574c; border: 1px solid #e2574c; }
 
   /* Folder tiles always render before individual-file cards in folder-view
      mode (guaranteed both by JS append order in renderLibrary() and, as a
@@ -694,9 +732,38 @@
   }
   .wall-btn svg { width: 14px; height: 14px; }
 
+  /* Big, always-visible "pick again" button -- the wall no longer swaps
+     covers on its own, so this is the only way the set changes. */
+  .wall-reshuffle-main {
+    position: absolute;
+    left: 50%;
+    bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
+    transform: translateX(-50%);
+    z-index: 3;
+    appearance: none;
+    border: none;
+    border-radius: 999px;
+    padding: 13px 22px;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 10px 24px -8px rgba(0,0,0,0.7);
+    white-space: nowrap;
+  }
+  .wall-reshuffle-main svg { width: 16px; height: 16px; }
+  .wall-reshuffle-main:active { transform: translateX(-50%) scale(0.97); }
+  .wall-grid {
+    padding-bottom: max(84px, calc(env(safe-area-inset-bottom) + 72px));
+  }
+
   .wall-hint {
     position: absolute;
-    bottom: max(22px, calc(env(safe-area-inset-bottom) + 8px));
+    bottom: max(80px, calc(env(safe-area-inset-bottom) + 66px));
     left: 0; right: 0;
     text-align: center;
     color: rgba(255,255,255,0.75);
@@ -994,7 +1061,7 @@
       </svg>
     </div>
     <h2>手元のPDFを、表紙だけでめくる。</h2>
-    <p>PDFを選ぶと表紙（1ページ目）を取り込みます。ランダムに選ばれた複数の表紙が画面に並び、それぞれ一定間隔で自動的に入れ替わります。タップすると中身を開けます。</p>
+    <p>PDFを選ぶと表紙（1ページ目）を取り込みます。ランダムに選ばれた複数の表紙が画面に並び、ボタンで何度でも選び直せます。タップすると中身を開けます。</p>
     <button class="btn btn-primary" id="btn-add-empty">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       フォルダを選ぶ
@@ -1005,7 +1072,7 @@
 
   <div id="view-library" hidden style="display:flex; flex-direction:column; flex:1;">
     <div class="toolbar">
-      <button class="icon-btn danger" id="btn-clear" aria-label="すべて削除" disabled>
+      <button class="icon-btn danger" id="btn-clear" aria-label="選択して削除" disabled>
         <svg viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.3 4.5V3a1 1 0 0 1 1-1h1.4a1 1 0 0 1 1 1v1.5M4.6 4.5l.6 8.4a1 1 0 0 0 1 .93h3.6a1 1 0 0 0 1-.93l.6-8.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button class="link-btn" id="btn-add-single">1つずつ選ぶ</button>
@@ -1019,6 +1086,20 @@
       <button class="icon-btn" id="btn-fav-filter" aria-label="お気に入りのみ表示" aria-pressed="false">
         <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
       </button>
+    </div>
+
+    <div class="select-bar" id="select-bar" hidden>
+      <div class="select-bar-row">
+        <div>
+          <div class="select-bar-title">削除するPDFを選んでください</div>
+          <div class="select-bar-count" id="select-count">0冊を選択中</div>
+        </div>
+        <button class="link-btn" id="select-cancel">キャンセル</button>
+      </div>
+      <div class="select-bar-row">
+        <button class="btn btn-danger-ghost" id="select-delete-all">お気に入り以外をすべて削除</button>
+        <button class="btn btn-danger" id="select-delete" disabled>選択した0冊を削除</button>
+      </div>
     </div>
 
     <div class="footer-bar footer-bar-top">
@@ -1075,20 +1156,6 @@
   </div>
   <div class="field">
     <div class="field-row">
-      <span class="field-label">1枚あたりの表示間隔</span>
-      <span class="field-value" id="interval-value">30秒</span>
-    </div>
-    <input type="range" id="interval-range" min="2" max="30" step="1" value="30">
-  </div>
-  <div class="field">
-    <div class="field-row">
-      <span class="field-label">候補にする冊数</span>
-      <span class="field-value" id="count-value">40冊</span>
-    </div>
-    <input type="range" id="count-range" min="5" max="40" step="1" value="40">
-  </div>
-  <div class="field">
-    <div class="field-row">
       <span class="field-label">ファイル名を表示</span>
       <button class="switch" id="toggle-caption" role="switch" aria-checked="false"></button>
     </div>
@@ -1130,22 +1197,27 @@
       <button class="switch" id="toggle-folder-preview-rotate" role="switch" aria-checked="true"></button>
     </div>
   </div>
+  <div class="field" id="interval-field">
+    <div class="field-row">
+      <span class="field-label">フォルダの表紙を切り替える間隔</span>
+      <span class="field-value" id="interval-value">30秒</span>
+    </div>
+    <input type="range" id="interval-range" min="2" max="30" step="1" value="30">
+  </div>
 </div>
 
 <div class="wall" id="wall">
   <div class="wall-grid" id="wall-grid"></div>
   <div class="wall-topbar">
-    <button class="wall-btn" id="wall-reshuffle" aria-label="ランダムに選び直す">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 13.66-5.66M20 12a8 8 0 0 1-13.66 5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <button class="wall-btn" id="wall-pause" aria-label="一時停止">
-      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-    </button>
     <button class="wall-btn" id="wall-close" aria-label="閉じる">
       <svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
     </button>
   </div>
   <div class="wall-hint" id="wall-hint">タップした表紙のPDFを開きます</div>
+  <button class="wall-reshuffle-main" id="wall-reshuffle" aria-label="ランダムに選び直す">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 13.66-5.66M20 12a8 8 0 0 1-13.66 5.66" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    ランダムに選び直す
+  </button>
 </div>
 
 <div class="viewer" id="viewer">
@@ -1342,6 +1414,21 @@
     });
   }
 
+  // One readwrite transaction for a whole batch of deletes -- far cheaper
+  // than a transaction per key when the user removes dozens at once.
+  function idbDeleteMany(storeName, keys) {
+    if (keys.length === 0) return Promise.resolve();
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(storeName, "readwrite");
+        var store = tx.objectStore(storeName);
+        keys.forEach(function (k) { store.delete(k); });
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
   function idbClear(storeName) {
     return openDB().then(function (db) {
       return new Promise(function (resolve, reject) {
@@ -1411,8 +1498,12 @@
   var sheetClose = $("sheet-close");
   var intervalRange = $("interval-range");
   var intervalValue = $("interval-value");
-  var countRange = $("count-range");
-  var countValue = $("count-value");
+  var intervalField = $("interval-field");
+  var selectBar = $("select-bar");
+  var selectCount = $("select-count");
+  var selectCancel = $("select-cancel");
+  var selectDeleteAll = $("select-delete-all");
+  var selectDelete = $("select-delete");
   var tilesRange = $("tiles-range");
   var tilesValue = $("tiles-value");
   var toggleCaption = $("toggle-caption");
@@ -1441,6 +1532,14 @@
   // tiles. Tapping a group tile drills into currentFolderView, showing just
   // that folder's PDFs as a flat list with a back link above the grid.
   var currentFolderView = null; // folder name string, or null = top level
+
+  // "選択して削除": instead of a delete button on every cover, the trash
+  // button switches the library into a selection mode where tapping a card
+  // (or a folder tile -> all of its PDFs) marks it, and one confirmed action
+  // removes the whole selection. Tracked by cover id so the selection
+  // survives drilling in and out of folders and any re-render.
+  var selectMode = false;
+  var selectedIds = new Set();
 
   function buildCard(c) {
     var card = document.createElement("div");
@@ -1472,19 +1571,21 @@
     });
     card.appendChild(fav);
 
-    var rm = document.createElement("button");
-    rm.className = "rm";
-    rm.setAttribute("aria-label", "削除");
-    rm.innerHTML = '<svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-    rm.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      if (!confirm("「" + c.name + "」を削除します。よろしいですか？")) return;
-      removeCover(c.id);
-    });
-    card.appendChild(rm);
+    card.appendChild(buildCheck());
+    if (selectedIds.has(c.id)) card.classList.add("selected");
 
-    card.addEventListener("click", function () { openViewer(c); });
+    card.addEventListener("click", function () {
+      if (selectMode) { toggleSelected([c.id], card); return; }
+      openViewer(c);
+    });
     return card;
+  }
+
+  function buildCheck() {
+    var check = document.createElement("div");
+    check.className = "check";
+    check.innerHTML = '<svg viewBox="0 0 12 12" fill="none"><path d="M2 6.2l2.6 2.6L10 3.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return check;
   }
 
   function buildFolderTile(folderName, members) {
@@ -1509,7 +1610,13 @@
     cap.textContent = folderName + "（" + members.length + "冊）";
     card.appendChild(cap);
 
+    card.appendChild(buildCheck());
+    var memberIds = members.map(function (m) { return m.id; });
+    if (memberIds.every(function (id) { return selectedIds.has(id); })) card.classList.add("selected");
+
     card.addEventListener("click", function () {
+      // In selection mode a folder tile selects/deselects the whole folder.
+      if (selectMode) { toggleSelected(memberIds, card); return; }
       currentFolderView = folderName;
       renderLibrary();
     });
@@ -1613,7 +1720,58 @@
 
     grid.innerHTML = "";
     grid.appendChild(frag);
+    grid.classList.toggle("selecting", selectMode);
+    if (selectMode) updateSelectBar();
     if (folderMode && currentFolderView === null && settings.folderPreviewRotate) startFolderTileRotation();
+  }
+
+  // ---------------------------------------------------------------
+  // Selection mode (選択して削除)
+  // ---------------------------------------------------------------
+  function enterSelectMode() {
+    if (covers.length === 0) return;
+    selectMode = true;
+    selectedIds.clear();
+    selectBar.hidden = false;
+    if (!libraryPanel.classList.contains("open")) {
+      libraryPanel.classList.add("open");
+      libraryToggle.setAttribute("aria-expanded", "true");
+    }
+    renderLibrary();
+  }
+  function exitSelectMode(rerender) {
+    if (!selectMode) return;
+    selectMode = false;
+    selectedIds.clear();
+    selectBar.hidden = true;
+    if (rerender !== false) renderLibrary();
+  }
+  function toggleSelected(ids, cardEl) {
+    var allSelected = ids.every(function (id) { return selectedIds.has(id); });
+    ids.forEach(function (id) { if (allSelected) selectedIds.delete(id); else selectedIds.add(id); });
+    if (cardEl) cardEl.classList.toggle("selected", !allSelected);
+    updateSelectBar();
+  }
+  function updateSelectBar() {
+    var n = selectedIds.size;
+    selectCount.textContent = n + "冊を選択中";
+    selectDelete.textContent = "選択した" + n + "冊を削除";
+    selectDelete.disabled = n === 0;
+    var deletable = covers.filter(function (c) { return !c.favorite; }).length;
+    selectDeleteAll.disabled = deletable === 0;
+  }
+  function removeCovers(ids) {
+    if (ids.length === 0) return;
+    var idSet = new Set(ids);
+    covers = covers.filter(function (c) { return !idSet.has(c.id); });
+    ids.forEach(function (id) { sessionPdfCache.delete(id); });
+    if (currentFolderView !== null && !covers.some(function (c) { return c.folder === currentFolderView; })) {
+      currentFolderView = null; // the folder we were in is now empty
+    }
+    exitSelectMode(false);
+    renderLibrary();
+    idbDeleteMany("covers", ids);
+    idbDeleteMany("pdfdata", ids);
   }
 
   function toggleFavorite(id) {
@@ -1635,14 +1793,6 @@
     }
     syncViewerFavButton();
     idbPut("covers", c);
-  }
-
-  function removeCover(id) {
-    covers = covers.filter(function (c) { return c.id !== id; });
-    sessionPdfCache.delete(id);
-    renderLibrary();
-    idbDelete("covers", id);
-    idbDelete("pdfdata", id);
   }
 
   // ---------------------------------------------------------------
@@ -1672,6 +1822,7 @@
     // and should stay put -- reshuffling would also yank the scroll position.
     // Shuffling only matters for the top level (folder tiles / all PDFs).
     if (currentFolderView !== null) return;
+    if (selectMode) return; // never move cards around while the user is picking
     if (covers.length < 2) return;
     covers = shuffle(covers);
     renderLibrary();
@@ -1960,8 +2111,6 @@
   function applySettingsToUI() {
     intervalRange.value = settings.interval;
     intervalValue.textContent = settings.interval + "秒";
-    countRange.value = settings.count;
-    countValue.textContent = settings.count + "冊";
     tilesRange.value = settings.tiles;
     tilesValue.textContent = settings.tiles + "枚";
     toggleCaption.setAttribute("aria-checked", settings.caption ? "true" : "false");
@@ -1976,6 +2125,7 @@
     libraryViewFolderBtn.setAttribute("aria-pressed", folderView ? "true" : "false");
     toggleFolderPreviewRotate.setAttribute("aria-checked", settings.folderPreviewRotate ? "true" : "false");
     folderPreviewRotateField.classList.toggle("disabled", !folderView);
+    intervalField.classList.toggle("disabled", !folderView || !settings.folderPreviewRotate);
   }
 
   function saveSetting(key, value) {
@@ -1989,14 +2139,14 @@
   var wall = $("wall");
   var wallGrid = $("wall-grid");
   var wallReshuffleBtn = $("wall-reshuffle");
-  var wallPauseBtn = $("wall-pause");
   var wallCloseBtn = $("wall-close");
   var wallHint = $("wall-hint");
 
-  var wallTiles = [];   // { el, imgA, imgB, capEl, showingA, current(coverRecord), nextSwapAt }
-  var wallPool = [];    // shuffled subset of covers used as the candidate set
-  var wallRafId = null;
-  var wallPaused = false;
+  // The wall is a still picture: it shows settings.tiles random covers and
+  // keeps them until the user taps "ランダムに選び直す" (or closes it). Nothing
+  // swaps on a timer any more.
+  var wallTiles = [];   // { el, imgA, imgB, capEl, showingA, current(coverRecord) }
+  var wallPool = [];    // shuffled covers used as the candidate set
   var wallHintTimer = null;
 
   function shuffle(arr) {
@@ -2009,7 +2159,7 @@
   }
 
   function jitteredDuration() {
-    // +/- 35% jitter so tiles don't stay in lockstep
+    // +/- 35% jitter so folder tiles don't rotate in lockstep
     var factor = 0.65 + Math.random() * 0.7;
     return settings.interval * 1000 * factor;
   }
@@ -2040,7 +2190,7 @@
       el.appendChild(cap);
       wallGrid.appendChild(el);
 
-      var tile = { el: el, imgA: imgA, imgB: imgB, capEl: cap, showingA: true, current: null, nextSwapAt: 0 };
+      var tile = { el: el, imgA: imgA, imgB: imgB, capEl: cap, showingA: true, current: null };
       (function (t) {
         t.el.addEventListener("click", function () {
           if (t.current) openViewer(t.current);
@@ -2074,37 +2224,22 @@
     return wallTiles.map(function (t) { return t.current ? t.current.id : null; }).filter(function (x) { return x !== null; });
   }
 
-  function wallTick() {
-    wallRafId = requestAnimationFrame(wallTick);
-    if (wallPaused) return;
-    var now = performance.now();
+  // Draws a fresh random set into the tiles. Used both when the wall opens
+  // and every time "ランダムに選び直す" is tapped.
+  function dealWall() {
+    wallPool = shuffle(covers);
+    buildWallGrid();
     wallTiles.forEach(function (tile) {
-      if (now >= tile.nextSwapAt) {
-        var next = pickForTile(currentlyShownIds());
-        if (next) setTileCover(tile, next, false);
-        tile.nextSwapAt = now + jitteredDuration();
-      }
+      var record = pickForTile(currentlyShownIds());
+      if (record) setTileCover(tile, record, true);
     });
   }
 
   function startWall() {
     if (covers.length === 0) return;
-    wallPool = shuffle(covers).slice(0, Math.min(settings.count, covers.length));
-    buildWallGrid();
-
-    var now = performance.now();
-    wallTiles.forEach(function (tile, i) {
-      var record = pickForTile(currentlyShownIds());
-      if (record) setTileCover(tile, record, true);
-      // stagger initial swap so tiles don't all change together
-      tile.nextSwapAt = now + Math.random() * settings.interval * 1000 + 400;
-    });
-
-    wallPaused = false;
-    wallPauseBtn.setAttribute("aria-label", "一時停止");
+    exitSelectMode();
+    dealWall();
     wall.classList.add("open");
-    if (wallRafId) cancelAnimationFrame(wallRafId);
-    wallRafId = requestAnimationFrame(wallTick);
 
     wallHint.classList.remove("hide");
     clearTimeout(wallHintTimer);
@@ -2113,23 +2248,12 @@
 
   function stopWall() {
     wall.classList.remove("open");
-    if (wallRafId) cancelAnimationFrame(wallRafId);
-    wallRafId = null;
   }
 
-  function toggleWallPause() {
-    wallPaused = !wallPaused;
-    if (!wallPaused) {
-      // push everyone's timer forward so nothing dumps all at once after resume
-      var now = performance.now();
-      wallTiles.forEach(function (tile) {
-        if (tile.nextSwapAt < now) tile.nextSwapAt = now + jitteredDuration();
-      });
-    }
-  }
-
-  wallReshuffleBtn.addEventListener("click", startWall);
-  wallPauseBtn.addEventListener("click", toggleWallPause);
+  wallReshuffleBtn.addEventListener("click", function () {
+    if (covers.length === 0) return;
+    dealWall();
+  });
   wallCloseBtn.addEventListener("click", stopWall);
 
   // ---------------------------------------------------------------
@@ -2174,9 +2298,6 @@
   var viewerRecord = null;
 
   function openViewer(record) {
-    var wasWallOpen = wall.classList.contains("open");
-    if (wasWallOpen) wallPaused = true;
-
     viewerRecord = record;
     viewerTitle.textContent = record.name;
     viewerPageLabel.textContent = "";
@@ -2830,15 +2951,30 @@
     processing.classList.remove("open");
   });
   btnClear.addEventListener("click", function () {
-    if (covers.length === 0) return;
-    if (!confirm("取り込んだPDF（" + covers.length + "冊）をすべて削除します。よろしいですか？")) return;
+    if (selectMode) exitSelectMode(); else enterSelectMode();
+  });
+  selectCancel.addEventListener("click", function () { exitSelectMode(); });
+  selectDelete.addEventListener("click", function () {
+    var ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!confirm("選択した" + ids.length + "冊を削除します。よろしいですか？")) return;
+    removeCovers(ids);
+  });
+  // "すべて削除" never touches favorites -- they're the ones you've decided
+  // to keep, so a bulk clear leaves them (and only them) in the library.
+  selectDeleteAll.addEventListener("click", function () {
+    var targets = covers.filter(function (c) { return !c.favorite; }).map(function (c) { return c.id; });
+    var kept = covers.length - targets.length;
+    if (targets.length === 0) {
+      alert("削除できるPDFがありません（取り込み済みのPDFはすべてお気に入りです）。");
+      return;
+    }
+    var msg = "お気に入り以外のPDF（" + targets.length + "冊）をすべて削除します。";
+    if (kept > 0) msg += "\nお気に入りの" + kept + "冊は残ります。";
+    msg += "\nよろしいですか？";
+    if (!confirm(msg)) return;
     if (!confirm("本当に削除してよろしいですか？この操作は取り消せません。")) return;
-    covers = [];
-    sessionPdfCache.clear();
-    currentFolderView = null;
-    renderLibrary();
-    idbClear("covers");
-    idbClear("pdfdata");
+    removeCovers(targets);
   });
   btnStart.addEventListener("click", startWall);
   btnSettings.addEventListener("click", openSheet);
@@ -2890,25 +3026,42 @@
     // Closing while drilled into a folder resets back to the top level, so
     // the panel always reopens at the folder list rather than wherever it
     // was last left.
+    if (!open && selectMode) exitSelectMode(false);
     if (!open && currentFolderView !== null) {
       currentFolderView = null;
       renderLibrary();
     }
   });
-  folderBackBtn.addEventListener("click", function () {
+  function leaveFolderView() {
+    if (currentFolderView === null) return;
     currentFolderView = null;
     renderLibrary();
-  });
+  }
+  folderBackBtn.addEventListener("click", leaveFolderView);
+  // Swipe right anywhere on the folder's grid to go back to the folder list
+  // (mirrors the iOS "back" gesture). Only a clearly horizontal, rightward
+  // drag counts, so normal vertical scrolling through the grid is unaffected.
+  (function () {
+    var sx = null, sy = null;
+    libraryPanel.addEventListener("touchstart", function (ev) {
+      if (currentFolderView === null || ev.touches.length !== 1) { sx = null; return; }
+      sx = ev.touches[0].clientX;
+      sy = ev.touches[0].clientY;
+    }, { passive: true });
+    libraryPanel.addEventListener("touchend", function (ev) {
+      if (sx === null) return;
+      var dx = ev.changedTouches[0].clientX - sx;
+      var dy = ev.changedTouches[0].clientY - sy;
+      sx = null;
+      if (dx > 70 && Math.abs(dy) < 60 && dx > Math.abs(dy) * 2) leaveFolderView();
+    }, { passive: true });
+    libraryPanel.addEventListener("touchcancel", function () { sx = null; }, { passive: true });
+  })();
 
   intervalRange.addEventListener("input", function () {
     var v = parseInt(intervalRange.value, 10);
     intervalValue.textContent = v + "秒";
     saveSetting("interval", v);
-  });
-  countRange.addEventListener("input", function () {
-    var v = parseInt(countRange.value, 10);
-    countValue.textContent = v + "冊";
-    saveSetting("count", v);
   });
   tilesRange.addEventListener("input", function () {
     var v = parseInt(tilesRange.value, 10);
@@ -2953,6 +3106,7 @@
     libraryViewFlatBtn.setAttribute("aria-pressed", mode === "flat" ? "true" : "false");
     libraryViewFolderBtn.setAttribute("aria-pressed", mode === "folder" ? "true" : "false");
     folderPreviewRotateField.classList.toggle("disabled", mode !== "folder");
+    intervalField.classList.toggle("disabled", mode !== "folder" || !settings.folderPreviewRotate);
     currentFolderView = null;
     renderLibrary();
   }
@@ -2962,7 +3116,11 @@
     var v = toggleFolderPreviewRotate.getAttribute("aria-checked") !== "true";
     toggleFolderPreviewRotate.setAttribute("aria-checked", v ? "true" : "false");
     saveSetting("folderPreviewRotate", v);
-    if (v) startFolderTileRotation(); else stopFolderTileRotation();
+    intervalField.classList.toggle("disabled", !v);
+    // stopFolderTileRotation() drops the tile list, so switching back on
+    // needs a re-render to rebuild it (startFolderTileRotation() alone
+    // would find nothing to rotate).
+    if (v) renderLibrary(); else stopFolderTileRotation();
   });
 
   // ---------------------------------------------------------------
