@@ -628,21 +628,50 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   }
 
-  /* ---------- processing overlay ---------- */
-  .processing {
-    position: fixed; inset: 0;
-    background: var(--bg);
+  /* ---------- import progress bar (non-blocking) ----------
+     Imports run in the background: this small bar sits at the bottom of the
+     screen while covers are being generated, and the rest of the app stays
+     fully usable. It sits under the wall/viewer/sheet layers on purpose. */
+  .import-bar {
+    position: fixed;
+    left: 12px; right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    max-width: 616px;
+    margin: 0 auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px -12px var(--shadow);
+    padding: 10px 12px 10px 14px;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 16px;
-    z-index: 50;
+    gap: 12px;
+    z-index: 35;
+    transform: translateY(120%);
     opacity: 0;
+    transition: transform 0.25s cubic-bezier(.32,.72,0,1), opacity 0.2s ease;
     pointer-events: none;
-    transition: opacity 0.2s ease;
   }
-  .processing.open { opacity: 1; pointer-events: auto; }
+  .import-bar.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+  .import-bar .spinner { width: 18px; height: 18px; border-width: 2.5px; flex: none; }
+  .import-bar-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .import-bar-text {
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .import-bar-text .ptext {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    font-weight: 400;
+    flex: none;
+  }
+  .import-bar-track { height: 4px; border-radius: 4px; background: var(--border); overflow: hidden; }
+  .import-bar-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 4px; transition: width 0.2s ease; }
+  .import-bar .link-btn { flex: none; padding: 6px 2px; }
   .spinner {
     width: 30px; height: 30px;
     border-radius: 50%;
@@ -651,11 +680,70 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .processing .ptext {
+
+  /* ---------- folder picker (choose which subfolders to import) ---------- */
+  .folder-pick-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 46vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 6px -6px 0;
+    padding: 0 6px;
+  }
+  .folder-pick-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 4px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .folder-pick-item:last-child { border-bottom: none; }
+  .folder-pick-box {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-contrast);
+    flex: none;
+  }
+  .folder-pick-box svg { width: 12px; height: 12px; opacity: 0; }
+  .folder-pick-item[aria-checked="true"] .folder-pick-box { background: var(--accent); border-color: var(--accent); }
+  .folder-pick-item[aria-checked="true"] .folder-pick-box svg { opacity: 1; }
+  .folder-pick-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.92rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .folder-pick-name.muted { color: var(--text-muted); font-weight: 400; }
+  .folder-pick-count {
     font-family: var(--font-mono);
-    font-size: 0.85rem;
-    color: var(--text-muted);
     font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    flex: none;
+  }
+  .folder-pick-actions {
+    display: flex;
+    gap: 10px;
+    padding-top: 14px;
+  }
+  .folder-pick-actions .btn { flex: 1; padding: 12px 14px; font-size: 0.9rem; }
+  .folder-pick-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0 2px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
   }
 
   /* ---------- wall (multi-cover random display) ---------- */
@@ -1129,10 +1217,30 @@
   <input type="file" id="reselect-folder-input" multiple webkitdirectory directory>
 </div>
 
-<div class="processing" id="processing">
+<div class="import-bar" id="import-bar" role="status" aria-live="polite">
   <div class="spinner"></div>
-  <div class="ptext" id="processing-text">表紙を作成中…</div>
-  <button class="btn btn-ghost" id="btn-processing-cancel">中止する</button>
+  <div class="import-bar-body">
+    <div class="import-bar-text"><span>表紙を取り込み中</span><span class="ptext" id="processing-text">0 / 0</span></div>
+    <div class="import-bar-track"><div class="import-bar-fill" id="import-bar-fill"></div></div>
+  </div>
+  <button class="link-btn" id="btn-processing-cancel">中止</button>
+</div>
+
+<div class="sheet-backdrop" id="folder-sheet-backdrop"></div>
+<div class="sheet" id="folder-sheet" role="dialog" aria-modal="true" aria-labelledby="folder-sheet-title">
+  <div class="sheet-head">
+    <div class="grabber"></div>
+    <div class="sheet-title-row">
+      <h3 id="folder-sheet-title">取り込むフォルダを選ぶ</h3>
+      <button type="button" class="link-btn" id="folder-pick-toggle-all">すべて解除</button>
+    </div>
+  </div>
+  <div class="folder-pick-list" id="folder-pick-list"></div>
+  <div class="folder-pick-summary"><span id="folder-pick-summary"></span></div>
+  <div class="folder-pick-actions">
+    <button type="button" class="btn btn-ghost" id="folder-pick-cancel">キャンセル</button>
+    <button type="button" class="btn btn-primary" id="folder-pick-import">取り込む</button>
+  </div>
 </div>
 
 <div class="sheet-backdrop" id="sheet-backdrop"></div>
@@ -1171,8 +1279,12 @@
   </div>
   <div class="field">
     <div class="field-row">
-      <span class="field-label">一覧をランダムな順番で表示する</span>
-      <button class="switch" id="toggle-shuffle" role="switch" aria-checked="true"></button>
+      <span class="field-label">一覧の並び順</span>
+    </div>
+    <div class="segmented" id="library-sort-toggle" role="group" aria-label="一覧の並び順">
+      <button type="button" id="library-sort-random" aria-pressed="true">ランダム</button>
+      <button type="button" id="library-sort-name" aria-pressed="false">名前順</button>
+      <button type="button" id="library-sort-added" aria-pressed="false">取り込み順</button>
     </div>
   </div>
   <div class="field" id="shuffle-minutes-field">
@@ -1449,7 +1561,10 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true, libraryViewMode: "flat", folderPreviewRotate: true };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true };
+  // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
+  // shuffleEnabled is kept in lockstep with (librarySort === "random") for
+  // the older code paths and stored settings that predate librarySort.
   function isRtl() { return settings.direction === "rtl"; }
   var importCancelRequested = false; // set by the "中止する" button during a bulk import
   var workerConfigured = false;
@@ -1483,9 +1598,17 @@
   var btnClear = $("btn-clear");
   var btnStart = $("btn-start");
   var btnSettings = $("btn-settings");
-  var processing = $("processing");
+  var importBar = $("import-bar");
+  var importBarFill = $("import-bar-fill");
   var processingText = $("processing-text");
   var btnProcessingCancel = $("btn-processing-cancel");
+  var folderSheet = $("folder-sheet");
+  var folderSheetBackdrop = $("folder-sheet-backdrop");
+  var folderPickList = $("folder-pick-list");
+  var folderPickSummary = $("folder-pick-summary");
+  var folderPickToggleAll = $("folder-pick-toggle-all");
+  var folderPickCancel = $("folder-pick-cancel");
+  var folderPickImport = $("folder-pick-import");
   var libraryToggle = $("library-toggle");
   var libraryToggleLabel = $("library-toggle-label");
   var libraryPanel = $("library-panel");
@@ -1509,7 +1632,7 @@
   var toggleCaption = $("toggle-caption");
   var directionLtrBtn = $("direction-ltr");
   var directionRtlBtn = $("direction-rtl");
-  var toggleShuffle = $("toggle-shuffle");
+  var librarySortBtns = { random: $("library-sort-random"), name: $("library-sort-name"), added: $("library-sort-added") };
   var shuffleMinutesField = $("shuffle-minutes-field");
   var shuffleMinutesRange = $("shuffle-minutes-range");
   var shuffleMinutesValue = $("shuffle-minutes-value");
@@ -1540,6 +1663,22 @@
   // survives drilling in and out of folders and any re-render.
   var selectMode = false;
   var selectedIds = new Set();
+
+  // Natural, numerically aware Japanese-locale name order, so "第1巻, 第2巻,
+  // ... 第10巻" (and "vol1, vol2, vol10") line up the way a person expects.
+  function byName(a, b) {
+    return a.localeCompare(b, "ja", { numeric: true, sensitivity: "base" });
+  }
+  function coverByName(a, b) { return byName(a.name, b.name); }
+
+  // The list the library renders from, in the configured order. In random
+  // mode the covers array itself is kept shuffled (see loadFromDb / the
+  // shuffle timer) so it's used as-is; the other two modes sort a copy.
+  function orderedCovers(list) {
+    if (settings.librarySort === "name") return list.slice().sort(coverByName);
+    if (settings.librarySort === "added") return list.slice().sort(function (a, b) { return a.addedAt - b.addedAt; });
+    return list;
+  }
 
   function buildCard(c) {
     var card = document.createElement("div");
@@ -1676,7 +1815,7 @@
     var folderMode = settings.libraryViewMode === "folder";
     if (!folderMode) currentFolderView = null;
 
-    var visible = favFilterActive ? covers.filter(function (c) { return !!c.favorite; }) : covers;
+    var visible = orderedCovers(favFilterActive ? covers.filter(function (c) { return !!c.favorite; }) : covers);
 
     stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
 
@@ -1690,9 +1829,7 @@
       // Random order is for browsing the top level; once you've opened a
       // folder you want its contents in a predictable order -- by file name,
       // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
-      folderCovers.sort(function (a, b) {
-        return a.name.localeCompare(b.name, "ja", { numeric: true, sensitivity: "base" });
-      });
+      folderCovers.sort(coverByName);
       folderBreadcrumb.hidden = false;
       folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
       if (favFilterActive && folderCovers.length === 0) renderEmptyFavMessage(frag);
@@ -1708,6 +1845,9 @@
       // --- Folder mode, top level: one tile per folder + ungrouped singles ---
       folderBreadcrumb.hidden = true;
       var grouped = groupCoversByFolder(visible);
+      // Folder tiles follow the same rule as files: alphabetical in name
+      // mode; otherwise first-seen order in the (shuffled / by-date) list.
+      if (settings.librarySort === "name") grouped.order.sort(byName);
       if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
         renderEmptyFavMessage(frag);
       }
@@ -2038,63 +2178,191 @@
       if (folderChanged) renderLibrary();
       return;
     }
-
-    processing.classList.add("open");
-    importCancelRequested = false;
-    var done = 0;
-    var total = toAdd.length;
-    processingText.textContent = "取り込み中… (" + done + " / " + total + ")";
-
-    function finishImport() {
-      idbAll("covers").then(function (rows) {
-        covers = rows.sort(function (a, b) { return a.addedAt - b.addedAt; });
-        processing.classList.remove("open");
-        renderLibrary();
-      });
-    }
-
-    function next(i) {
-      if (importCancelRequested || i >= toAdd.length) {
-        finishImport();
-        return;
-      }
-      var file = toAdd[i];
-      materialize(file)
-        .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
-        .then(function (dataUrl) {
-          var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now(), folder: folderFromFile(file) };
-          return idbPut("covers", record).then(function (newId) {
-            sessionPdfCache.set(newId, file);
-            return persistPdfBlob(newId, file).then(function () {
-              done++;
-              processingText.textContent = "取り込み中… (" + done + " / " + total + ")";
-              advance(i + 1);
-            });
-          });
-        })
-        .catch(function (err) {
-          console.error("PDF処理エラー", file.name, err);
-          done++;
-          processingText.textContent = "取り込み中… (" + done + " / " + total + ")";
-          advance(i + 1);
-        });
-    }
-
-    // Every so often, hand control back to the browser instead of chaining
-    // straight into the next promise. Large batches (hundreds to thousands
-    // of PDFs) otherwise never give Safari a chance to garbage-collect
-    // between iterations, and peak memory creeps up until the tab crashes.
-    function advance(nextIndex) {
-      if (importCancelRequested) { finishImport(); return; }
-      if (nextIndex > 0 && nextIndex % 15 === 0) {
-        setTimeout(function () { next(nextIndex); }, 30);
-      } else {
-        next(nextIndex);
-      }
-    }
-
-    next(0);
+    // Files already sitting in the queue from an earlier pick shouldn't be
+    // queued twice.
+    var queuedNames = {};
+    importQueue.forEach(function (f) { queuedNames[fileBaseName(f.name)] = true; });
+    toAdd = toAdd.filter(function (f) { return !queuedNames[fileBaseName(f.name)]; });
+    enqueueImport(toAdd);
   }
+
+  // ---------------------------------------------------------------
+  // Background import queue
+  // ---------------------------------------------------------------
+  // Imports no longer block the app behind a full-screen overlay: files are
+  // queued and processed one at a time while a small progress bar sits at
+  // the bottom of the screen, and everything else (browsing, the wall, the
+  // viewer, even picking more folders -- they just join the queue) keeps
+  // working. Each finished cover is added to the library as it completes.
+  // Note: this is "background" within the app. iOS suspends a web page's
+  // JavaScript once you switch to another app, so the queue pauses then and
+  // picks up again as soon as 表紙めくり is back in front.
+  var importQueue = [];
+  var importRunning = false;
+  var importDone = 0;
+  var importTotal = 0;
+  var importRenderTimer = null;
+
+  function updateImportBar() {
+    processingText.textContent = importDone + " / " + importTotal;
+    importBarFill.style.width = (importTotal ? Math.round(importDone / importTotal * 100) : 0) + "%";
+  }
+
+  // Coalesce the per-file renders: at most one grid rebuild every ~600ms
+  // (plus one at the very end), otherwise a 500-file import would rebuild
+  // the grid 500 times.
+  function scheduleImportRender() {
+    if (importRenderTimer) return;
+    importRenderTimer = setTimeout(function () {
+      importRenderTimer = null;
+      renderLibrary();
+    }, 600);
+  }
+
+  function enqueueImport(files) {
+    if (files.length === 0) return;
+    files.forEach(function (f) { importQueue.push(f); });
+    var wasRunning = importRunning;
+    if (wasRunning) {
+      importTotal += files.length; // a second pick joins the running batch
+    } else {
+      importRunning = true;
+      importCancelRequested = false;
+      importDone = 0;
+      importTotal = files.length;
+      importBar.classList.add("open");
+    }
+    updateImportBar();
+    if (!wasRunning) runImportStep();
+  }
+
+  function finishImport() {
+    importRunning = false;
+    importQueue = [];
+    importBar.classList.remove("open");
+    if (importRenderTimer) { clearTimeout(importRenderTimer); importRenderTimer = null; }
+    renderLibrary();
+  }
+
+  var importStepCount = 0;
+  function runImportStep() {
+    if (importCancelRequested || importQueue.length === 0) { finishImport(); return; }
+    var file = importQueue.shift();
+    materialize(file)
+      .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
+      .then(function (dataUrl) {
+        var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now(), folder: folderFromFile(file) };
+        return idbPut("covers", record).then(function (newId) {
+          record.id = newId;
+          sessionPdfCache.set(newId, file);
+          // Same file picked twice while still queued (e.g. the same folder
+          // re-picked mid-import): the second copy matched nothing when it
+          // was queued, so guard here instead of creating a duplicate.
+          if (!covers.some(function (c) { return c.name === record.name; })) covers.push(record);
+          return persistPdfBlob(newId, file);
+        });
+      })
+      .catch(function (err) { console.error("PDF処理エラー", file.name, err); })
+      .then(function () {
+        importDone++;
+        updateImportBar();
+        scheduleImportRender();
+        advanceImport();
+      });
+  }
+
+  // Every so often, hand control back to the browser instead of chaining
+  // straight into the next promise. Large batches (hundreds to thousands
+  // of PDFs) otherwise never give Safari a chance to garbage-collect
+  // between iterations, and peak memory creeps up until the tab crashes.
+  function advanceImport() {
+    if (importCancelRequested) { finishImport(); return; }
+    importStepCount++;
+    if (importStepCount % 15 === 0) setTimeout(runImportStep, 30); else runImportStep();
+  }
+
+  // ---------------------------------------------------------------
+  // Folder picker: choose which subfolders of a picked folder to import
+  // ---------------------------------------------------------------
+  // The browser's folder dialog only ever returns one folder (and on iOS
+  // there's no way to multi-select folders at all), so "pick several" is
+  // done one level down: after the folder is picked, its subfolders are
+  // listed with a checkbox each and only the ticked ones get imported.
+  var folderPickGroups = []; // [{ name, files, checked }]
+
+  function offerFolderPick(files) {
+    var pdfs = Array.prototype.slice.call(files).filter(function (f) {
+      return f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+    });
+    if (pdfs.length === 0) return;
+    var groups = {};
+    var order = [];
+    pdfs.forEach(function (f) {
+      var g = folderFromFile(f);
+      if (!groups[g]) { groups[g] = []; order.push(g); }
+      groups[g].push(f);
+    });
+    if (order.length < 2) { handleFiles(pdfs); return; } // nothing to choose between
+    order.sort(byName);
+    folderPickGroups = order.map(function (g) { return { name: g, files: groups[g], checked: true }; });
+    renderFolderPick();
+    folderSheetBackdrop.classList.add("open");
+    folderSheet.classList.add("open");
+  }
+
+  function renderFolderPick() {
+    folderPickList.innerHTML = "";
+    var frag = document.createDocumentFragment();
+    folderPickGroups.forEach(function (g) {
+      var row = document.createElement("div");
+      row.className = "folder-pick-item";
+      row.setAttribute("role", "checkbox");
+      row.setAttribute("aria-checked", g.checked ? "true" : "false");
+      row.innerHTML = '<span class="folder-pick-box"><svg viewBox="0 0 12 12" fill="none"><path d="M2 6.2l2.6 2.6L10 3.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>'
+        + '<span class="folder-pick-name' + (g.name ? "" : " muted") + '"></span>'
+        + '<span class="folder-pick-count"></span>';
+      row.querySelector(".folder-pick-name").textContent = g.name || "（フォルダ直下のPDF）";
+      row.querySelector(".folder-pick-count").textContent = g.files.length + "冊";
+      row.addEventListener("click", function () {
+        g.checked = !g.checked;
+        row.setAttribute("aria-checked", g.checked ? "true" : "false");
+        updateFolderPickSummary();
+      });
+      frag.appendChild(row);
+    });
+    folderPickList.appendChild(frag);
+    updateFolderPickSummary();
+  }
+
+  function updateFolderPickSummary() {
+    var n = 0, files = 0;
+    folderPickGroups.forEach(function (g) { if (g.checked) { n++; files += g.files.length; } });
+    folderPickSummary.textContent = folderPickGroups.length + "フォルダ中 " + n + "フォルダ（" + files + "冊）を選択";
+    folderPickImport.textContent = files > 0 ? files + "冊を取り込む" : "取り込む";
+    folderPickImport.disabled = files === 0;
+    var all = folderPickGroups.every(function (g) { return g.checked; });
+    folderPickToggleAll.textContent = all ? "すべて解除" : "すべて選択";
+  }
+
+  function closeFolderPick() {
+    folderSheetBackdrop.classList.remove("open");
+    folderSheet.classList.remove("open");
+    folderPickGroups = [];
+  }
+
+  folderPickToggleAll.addEventListener("click", function () {
+    var all = folderPickGroups.every(function (g) { return g.checked; });
+    folderPickGroups.forEach(function (g) { g.checked = !all; });
+    renderFolderPick();
+  });
+  folderPickCancel.addEventListener("click", closeFolderPick);
+  folderSheetBackdrop.addEventListener("click", closeFolderPick);
+  folderPickImport.addEventListener("click", function () {
+    var files = [];
+    folderPickGroups.forEach(function (g) { if (g.checked) files = files.concat(g.files); });
+    closeFolderPick();
+    handleFiles(files);
+  });
 
   // ---------------------------------------------------------------
   // Settings sheet
@@ -2118,8 +2386,10 @@
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
-    toggleShuffle.setAttribute("aria-checked", settings.shuffleEnabled ? "true" : "false");
-    shuffleMinutesField.classList.toggle("disabled", !settings.shuffleEnabled);
+    Object.keys(librarySortBtns).forEach(function (k) {
+      librarySortBtns[k].setAttribute("aria-pressed", settings.librarySort === k ? "true" : "false");
+    });
+    shuffleMinutesField.classList.toggle("disabled", settings.librarySort !== "random");
     var folderView = settings.libraryViewMode === "folder";
     libraryViewFlatBtn.setAttribute("aria-pressed", folderView ? "false" : "true");
     libraryViewFolderBtn.setAttribute("aria-pressed", folderView ? "true" : "false");
@@ -2936,7 +3206,7 @@
   btnAddSingleEmpty.addEventListener("click", function () { fileInputSingle.click(); });
   btnAddSingle.addEventListener("click", function () { fileInputSingle.click(); });
   fileInput.addEventListener("change", function (ev) {
-    handleFiles(ev.target.files);
+    offerFolderPick(ev.target.files);
     fileInput.value = "";
   });
   fileInputSingle.addEventListener("change", function (ev) {
@@ -2945,10 +3215,11 @@
   });
   btnProcessingCancel.addEventListener("click", function () {
     // The file currently in flight finishes on its own (its render/save
-    // can't be aborted mid-way), but no further files are started, and the
-    // overlay closes right away so the user isn't stuck waiting on it.
+    // can't be aborted mid-way), but nothing further is started and the
+    // rest of the queue is dropped.
     importCancelRequested = true;
-    processing.classList.remove("open");
+    importQueue = [];
+    importBar.classList.remove("open");
   });
   btnClear.addEventListener("click", function () {
     if (selectMode) exitSelectMode(); else enterSelectMode();
@@ -2982,6 +3253,7 @@
   sheetClose.addEventListener("click", closeSheet);
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && sheet.classList.contains("open")) closeSheet();
+    if (ev.key === "Escape" && folderSheet.classList.contains("open")) closeFolderPick();
   });
   // Swipe down on the sheet's header (grabber + title) to dismiss it, the
   // way iOS sheets work. The header only -- the settings body scrolls.
@@ -3093,12 +3365,24 @@
     saveSetting("shuffleMinutes", v);
     restartLibraryShuffleIfRunning();
   });
-  toggleShuffle.addEventListener("click", function () {
-    var v = toggleShuffle.getAttribute("aria-checked") !== "true";
-    toggleShuffle.setAttribute("aria-checked", v ? "true" : "false");
-    shuffleMinutesField.classList.toggle("disabled", !v);
-    saveSetting("shuffleEnabled", v);
-    if (v) startLibraryShuffle(); else stopLibraryShuffle();
+  function setLibrarySort(mode) {
+    if (settings.librarySort === mode) return;
+    saveSetting("librarySort", mode);
+    saveSetting("shuffleEnabled", mode === "random");
+    Object.keys(librarySortBtns).forEach(function (k) {
+      librarySortBtns[k].setAttribute("aria-pressed", mode === k ? "true" : "false");
+    });
+    shuffleMinutesField.classList.toggle("disabled", mode !== "random");
+    if (mode === "random") {
+      if (covers.length > 1) covers = shuffle(covers);
+      startLibraryShuffle();
+    } else {
+      stopLibraryShuffle();
+    }
+    renderLibrary();
+  }
+  Object.keys(librarySortBtns).forEach(function (k) {
+    librarySortBtns[k].addEventListener("click", function () { setLibrarySort(k); });
   });
   function setLibraryViewMode(mode) {
     if (settings.libraryViewMode === mode) return;
@@ -3130,6 +3414,12 @@
     return Promise.all([idbAll("covers"), idbAll("settings")]).then(function (res) {
       covers = res[0].sort(function (a, b) { return a.addedAt - b.addedAt; });
       res[1].forEach(function (row) { settings[row.key] = row.value; });
+      // Settings saved before "一覧の並び順" existed only have shuffleEnabled;
+      // map them onto the new three-way setting. Afterwards librarySort is
+      // authoritative and shuffleEnabled just mirrors it.
+      var hasSort = res[1].some(function (row) { return row.key === "librarySort"; });
+      if (!hasSort) settings.librarySort = settings.shuffleEnabled ? "random" : "added";
+      settings.shuffleEnabled = settings.librarySort === "random";
       applySettingsToUI();
       // Randomize the initial display order too, not just the periodic
       // reshuffle -- otherwise every fresh tab-open would start out sorted
