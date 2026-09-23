@@ -2132,9 +2132,22 @@
   // after a fresh launch without the user re-selecting its folder. A quota
   // or other storage failure here is non-fatal: the cover thumbnail is
   // already saved, so the file just falls back to needing a reselect.
+  // Resolves true once the bytes are safely in IndexedDB, false if the
+  // write failed (quota etc.) -- callers use that to decide whether they
+  // still need to hang on to the picked File object.
   function persistPdfBlob(id, file) {
-    return idbPut("pdfdata", { id: id, blob: file }).catch(function (err) {
+    return idbPut("pdfdata", { id: id, blob: file }).then(function () {
+      // Once the bytes live in our own store, drop the reference to the
+      // File the picker handed us. On iOS a picked File points at a
+      // temporary copy the system made in the app's container; holding
+      // that reference keeps the copy alive, and with a 20GB library those
+      // copies were piling up in "システムデータ" until the next reboot.
+      // From here on the viewer reads the IndexedDB copy instead.
+      if (sessionPdfCache.get(id) === file) sessionPdfCache.delete(id);
+      return true;
+    }).catch(function (err) {
       console.error("PDF本体の保存に失敗しました(表紙は保存済みです)", id, err);
+      return false;
     });
   }
 
@@ -2153,7 +2166,6 @@
     files.forEach(function (f) {
       var existing = existingByName[fileBaseName(f.name)];
       if (existing) {
-        sessionPdfCache.set(existing.id, f);
         matched.push([existing, f]);
         // Re-picking a folder can retroactively teach an already-imported
         // cover which subfolder it lives in (e.g. it was first added one
@@ -2179,11 +2191,17 @@
         var have = {};
         keys.forEach(function (k) { have[k] = true; });
         matched.forEach(function (pair) {
-          if (!have[pair[0].id]) persistPdfBlob(pair[0].id, pair[1]);
+          if (!have[pair[0].id]) {
+            sessionPdfCache.set(pair[0].id, pair[1]);
+            persistPdfBlob(pair[0].id, pair[1]);
+          }
         });
       }).catch(function (err) {
         console.error("pdfdata key scan failed, falling back to full persist", err);
-        matched.forEach(function (pair) { persistPdfBlob(pair[0].id, pair[1]); });
+        matched.forEach(function (pair) {
+          sessionPdfCache.set(pair[0].id, pair[1]);
+          persistPdfBlob(pair[0].id, pair[1]);
+        });
       });
     }
 
@@ -2253,7 +2271,7 @@
 
   function finishImport() {
     importRunning = false;
-    importQueue = [];
+    importQueue = []; // drop any remaining File references (see persistPdfBlob)
     importBar.classList.remove("open");
     if (importRenderTimer) { clearTimeout(importRenderTimer); importRenderTimer = null; }
     renderLibrary();
@@ -2438,14 +2456,14 @@
       var lines = [];
       lines.push("PDF本体のコピー: " + fmtBytes(pdf.bytes) + "（" + pdf.count + "冊）");
       lines.push("表紙画像: " + fmtBytes(thumbBytes) + "（" + covers.length + "冊）");
-      lines.push("アプリの合計: " + fmtBytes(appTotal));
-      if (e && typeof e.usage === "number") {
-        lines.push("ブラウザが報告する使用量: " + fmtBytes(e.usage) + (typeof e.quota === "number" ? "（上限 " + fmtBytes(e.quota) + "）" : ""));
-        var gap = e.usage - appTotal;
-        if (gap > 50 * 1024 * 1024) lines.push("差分 " + fmtBytes(gap) + " は、ブラウザ側が未回収の領域です");
-      } else {
-        lines.push("ブラウザの使用量はこの環境では取得できません");
+      lines.push("アプリの合計: " + fmtBytes(appTotal) + (pdf.count ? "（1冊あたり平均 " + fmtBytes(Math.round(pdf.bytes / pdf.count)) + "）" : ""));
+      // Safari's storage estimate leaves out IndexedDB blob files, so it
+      // reads as a few hundred MB against a multi-GB library and would only
+      // mislead. Mention it only when it's in the same ballpark (Chrome etc.).
+      if (e && typeof e.usage === "number" && e.usage >= appTotal * 0.8) {
+        lines.push("ブラウザが報告する使用量: " + fmtBytes(e.usage));
       }
+      lines.push("iPhoneでは、この分は「設定 → 一般 → iPhoneストレージ」の「システムデータ」に含まれます");
       storageInfo.textContent = lines.join("\n");
     }).catch(function () {
       storageInfo.textContent = "計測できませんでした";
