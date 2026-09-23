@@ -560,6 +560,14 @@
     justify-content: space-between;
   }
   .field-label { font-size: 0.92rem; font-weight: 500; }
+  .storage-info {
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: pre-line;
+  }
+  .storage-info b { color: var(--text); font-weight: 600; }
   .field-value {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
@@ -1155,7 +1163,7 @@
       フォルダを選ぶ
     </button>
     <button class="link-btn" id="btn-add-single-empty">PDFを1つずつ選ぶ</button>
-    <p style="font-size:0.72rem; color:var(--text-muted); max-width:28ch;">保存されるのは表紙の画像だけです。PDF本体はブラウザに保存されず、外部にも送信されません。中身を見るときはその場でPDFを選びます。</p>
+    <p style="font-size:0.72rem; color:var(--text-muted); max-width:28ch;">表紙の画像とPDF本体のコピーをこのブラウザ内に保存します（外部には送信されません）。保存した分だけiPhoneの容量を使います。</p>
   </div>
 
   <div id="view-library" hidden style="display:flex; flex-direction:column; flex:1;">
@@ -1315,6 +1323,13 @@
       <span class="field-value" id="interval-value">30秒</span>
     </div>
     <input type="range" id="interval-range" min="2" max="30" step="1" value="30">
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">ストレージ使用量</span>
+      <button type="button" class="link-btn" id="storage-refresh">再計測</button>
+    </div>
+    <div class="storage-info" id="storage-info">計測中…</div>
   </div>
 </div>
 
@@ -2370,7 +2385,73 @@
   function openSheet() {
     sheetBackdrop.classList.add("open");
     sheet.classList.add("open");
+    measureStorage();
   }
+
+  // ---------------------------------------------------------------
+  // Storage readout: what this app actually holds (summed from its own
+  // records) next to what the browser says the whole origin occupies. A
+  // gap between the two is space the browser's storage engine hasn't
+  // reclaimed (or is holding outside our database), not library data.
+  // ---------------------------------------------------------------
+  var storageInfo = $("storage-info");
+  var storageRefresh = $("storage-refresh");
+  var storageMeasuring = false;
+
+  function fmtBytes(n) {
+    if (n >= 1024 * 1024 * 1024) return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
+    return Math.round(n / 1024) + " KB";
+  }
+
+  // Walks the pdfdata store with a cursor so only one record is alive at
+  // a time; Blob.size is metadata, so this never reads the PDF bytes.
+  function sumPdfDataBytes() {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var total = 0, count = 0;
+        var req = db.transaction("pdfdata", "readonly").objectStore("pdfdata").openCursor();
+        req.onsuccess = function () {
+          var cur = req.result;
+          if (!cur) { resolve({ bytes: total, count: count }); return; }
+          var b = cur.value && cur.value.blob;
+          if (b && typeof b.size === "number") { total += b.size; count++; }
+          cur.continue();
+        };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  }
+
+  function measureStorage() {
+    if (storageMeasuring) return;
+    storageMeasuring = true;
+    storageInfo.textContent = "計測中…";
+    var thumbBytes = covers.reduce(function (acc, c) {
+      // dataURL is base64: ~3/4 of its length is the JPEG's real size
+      return acc + (c.thumb ? Math.round(c.thumb.length * 0.75) : 0);
+    }, 0);
+    var est = (navigator.storage && navigator.storage.estimate) ? navigator.storage.estimate().catch(function () { return null; }) : Promise.resolve(null);
+    Promise.all([sumPdfDataBytes().catch(function () { return { bytes: 0, count: 0 }; }), est]).then(function (r) {
+      var pdf = r[0], e = r[1];
+      var appTotal = pdf.bytes + thumbBytes;
+      var lines = [];
+      lines.push("PDF本体のコピー: " + fmtBytes(pdf.bytes) + "（" + pdf.count + "冊）");
+      lines.push("表紙画像: " + fmtBytes(thumbBytes) + "（" + covers.length + "冊）");
+      lines.push("アプリの合計: " + fmtBytes(appTotal));
+      if (e && typeof e.usage === "number") {
+        lines.push("ブラウザが報告する使用量: " + fmtBytes(e.usage) + (typeof e.quota === "number" ? "（上限 " + fmtBytes(e.quota) + "）" : ""));
+        var gap = e.usage - appTotal;
+        if (gap > 50 * 1024 * 1024) lines.push("差分 " + fmtBytes(gap) + " は、ブラウザ側が未回収の領域です");
+      } else {
+        lines.push("ブラウザの使用量はこの環境では取得できません");
+      }
+      storageInfo.textContent = lines.join("\n");
+    }).catch(function () {
+      storageInfo.textContent = "計測できませんでした";
+    }).then(function () { storageMeasuring = false; });
+  }
+  storageRefresh.addEventListener("click", measureStorage);
   function closeSheet() {
     sheetBackdrop.classList.remove("open");
     sheet.classList.remove("open");
