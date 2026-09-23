@@ -745,6 +745,24 @@
     padding-top: 14px;
   }
   .folder-pick-actions .btn { flex: 1; padding: 12px 14px; font-size: 0.9rem; }
+  /* Big pill so it's an easy thumb target (was a small underlined link). */
+  .pick-toggle-all {
+    appearance: none;
+    border: 1.5px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    min-height: 40px;
+    padding: 0 18px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    flex: none;
+    touch-action: manipulation;
+  }
+  .pick-toggle-all:active { transform: scale(0.97); }
+  .pick-toggle-all.all-on { background: var(--accent); color: var(--accent-contrast); }
   .folder-pick-summary {
     display: flex;
     justify-content: space-between;
@@ -1240,7 +1258,7 @@
     <div class="grabber"></div>
     <div class="sheet-title-row">
       <h3 id="folder-sheet-title">取り込むフォルダを選ぶ</h3>
-      <button type="button" class="link-btn" id="folder-pick-toggle-all">すべて解除</button>
+      <button type="button" class="pick-toggle-all" id="folder-pick-toggle-all">すべて選択</button>
     </div>
   </div>
   <div class="folder-pick-list" id="folder-pick-list"></div>
@@ -2337,7 +2355,7 @@
     });
     if (order.length < 2) { handleFiles(pdfs); return; } // nothing to choose between
     order.sort(byName);
-    folderPickGroups = order.map(function (g) { return { name: g, files: groups[g], checked: true }; });
+    folderPickGroups = order.map(function (g) { return { name: g, files: groups[g], checked: false }; }); // start with nothing ticked
     renderFolderPick();
     folderSheetBackdrop.classList.add("open");
     folderSheet.classList.add("open");
@@ -2375,6 +2393,7 @@
     folderPickImport.disabled = files === 0;
     var all = folderPickGroups.every(function (g) { return g.checked; });
     folderPickToggleAll.textContent = all ? "すべて解除" : "すべて選択";
+    folderPickToggleAll.classList.toggle("all-on", all);
   }
 
   function closeFolderPick() {
