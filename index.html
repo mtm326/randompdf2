@@ -485,7 +485,10 @@
     z-index: 41;
     box-shadow: 0 -20px 40px -20px var(--shadow);
   }
-  .sheet.open { transform: translateY(0); }
+  /* "none" rather than translateY(0) once open: iOS WebKit can keep stale
+     hit-test regions for content inside a transformed, scrolling layer,
+     which made taps land on the wrong row. */
+  .sheet.open { transform: none; }
   /* The sheet has grown to nine settings -- taller than a phone screen. Cap
      it and scroll inside so its header (with the close button) is always on
      screen and a strip of backdrop stays tappable above it; without this the
@@ -689,16 +692,31 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ---------- folder picker (choose which subfolders to import) ---------- */
+  /* ---------- folder picker (choose which subfolders to import) ----------
+     One scroll container only (the list). Header and buttons are plain,
+     non-sticky flex items. The earlier layout nested the list's scroller
+     inside the sheet's own scroller under a sticky header, and iOS mis-
+     mapped taps after scrolling (a row selecting its neighbour, or a tap
+     on a row hitting the header's "すべて選択"). */
+  #folder-sheet {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+  #folder-sheet .sheet-head { position: static; flex: none; margin-bottom: 0; }
   .folder-pick-list {
     display: flex;
     flex-direction: column;
-    max-height: 46vh;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     margin: 6px -6px 0;
     padding: 0 6px;
   }
+  .folder-pick-summary, .folder-pick-actions { flex: none; }
   .folder-pick-item {
     display: flex;
     align-items: center;
@@ -2374,11 +2392,7 @@
         + '<span class="folder-pick-count"></span>';
       row.querySelector(".folder-pick-name").textContent = g.name || "（フォルダ直下のPDF）";
       row.querySelector(".folder-pick-count").textContent = g.files.length + "冊";
-      row.addEventListener("click", function () {
-        g.checked = !g.checked;
-        row.setAttribute("aria-checked", g.checked ? "true" : "false");
-        updateFolderPickSummary();
-      });
+      row._group = g; // taps are routed by the sheet-level dispatcher below
       frag.appendChild(row);
     });
     folderPickList.appendChild(frag);
@@ -2402,19 +2416,64 @@
     folderPickGroups = [];
   }
 
-  folderPickToggleAll.addEventListener("click", function () {
+  function toggleFolderRow(row) {
+    var g = row._group;
+    if (!g) return;
+    g.checked = !g.checked;
+    row.setAttribute("aria-checked", g.checked ? "true" : "false");
+    updateFolderPickSummary();
+  }
+  function toggleAllFolders() {
     var all = folderPickGroups.every(function (g) { return g.checked; });
     folderPickGroups.forEach(function (g) { g.checked = !all; });
     renderFolderPick();
-  });
-  folderPickCancel.addEventListener("click", closeFolderPick);
-  folderSheetBackdrop.addEventListener("click", closeFolderPick);
-  folderPickImport.addEventListener("click", function () {
+  }
+  function importPickedFolders() {
+    if (folderPickImport.disabled) return;
     var files = [];
     folderPickGroups.forEach(function (g) { if (g.checked) files = files.concat(g.files); });
     closeFolderPick();
     handleFiles(files);
-  });
+  }
+
+  // One tap dispatcher for the whole picker. Rather than trusting which
+  // element the browser says was tapped (on iOS that hit-test could be off
+  // by a row after scrolling), it takes the tap's screen coordinates and
+  // checks them against each control's actual on-screen rectangle.
+  function inRect(el, x, y) {
+    var r = el.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+  var folderListLastScroll = 0;
+  folderPickList.addEventListener("scroll", function () { folderListLastScroll = Date.now(); }, { passive: true });
+
+  folderSheet.addEventListener("click", function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var x = ev.clientX, y = ev.clientY;
+    var fromPointer = ev.isTrusted && !(x === 0 && y === 0);
+    if (!fromPointer) {
+      // Keyboard / programmatic activation: the target is reliable here.
+      var t = ev.target;
+      if (t.closest("#folder-pick-toggle-all")) return toggleAllFolders();
+      if (t.closest("#folder-pick-cancel")) return closeFolderPick();
+      if (t.closest("#folder-pick-import")) return importPickedFolders();
+      var r = t.closest(".folder-pick-item");
+      if (r) toggleFolderRow(r);
+      return;
+    }
+    if (inRect(folderPickToggleAll, x, y)) return toggleAllFolders();
+    if (inRect(folderPickCancel, x, y)) return closeFolderPick();
+    if (inRect(folderPickImport, x, y)) return importPickedFolders();
+    if (!inRect(folderPickList, x, y)) return;
+    // A tap that just stopped a momentum scroll isn't meant as a selection.
+    if (Date.now() - folderListLastScroll < 250) return;
+    var rows = folderPickList.querySelectorAll(".folder-pick-item");
+    for (var i = 0; i < rows.length; i++) {
+      if (inRect(rows[i], x, y)) { toggleFolderRow(rows[i]); return; }
+    }
+  }, true);
+  folderSheetBackdrop.addEventListener("click", closeFolderPick);
 
   // ---------------------------------------------------------------
   // Settings sheet
