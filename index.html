@@ -1956,7 +1956,12 @@
       // Random order is for browsing the top level; once you've opened a
       // folder you want its contents in a predictable order -- by file name,
       // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
-      folderCovers.sort(coverByName);
+      // Favourites first, then everything in name order (each group keeps
+      // the numerically aware name order).
+      folderCovers.sort(function (a, b) {
+        var fa = a.favorite ? 0 : 1, fb = b.favorite ? 0 : 1;
+        return fa !== fb ? fa - fb : coverByName(a, b);
+      });
       folderBreadcrumb.hidden = false;
       folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
       folderCovers.forEach(function (c) { frag.appendChild(buildCard(c)); });
@@ -2049,7 +2054,9 @@
     // folder-tile rotation timers. The one case that still needs a rebuild
     // is the favorites-only filter, where un-starring makes the card vanish.
     var card = grid.querySelector('.card[data-id="' + c.id + '"]');
-    if (favFilterActive || !card) {
+    // Inside a folder favourites are pinned to the top, so a star change
+    // has to re-sort the grid too.
+    if (favFilterActive || currentFolderView !== null || !card) {
       renderLibrary();
     } else {
       var fav = card.querySelector(".fav");
