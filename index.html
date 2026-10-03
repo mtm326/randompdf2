@@ -838,6 +838,34 @@
     pointer-events: none;
   }
   .wall-tile .cap.show { opacity: 1; }
+  /* Favourite star on each random-display cover. 36px hit area for thumbs;
+     the visible disc is smaller. */
+  .wall-fav {
+    position: absolute;
+    top: 2px; right: 2px;
+    width: 36px; height: 36px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wall-fav::before {
+    content: "";
+    position: absolute;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(10,10,14,0.55);
+    backdrop-filter: blur(2px);
+  }
+  .wall-fav svg { position: relative; width: 15px; height: 15px; color: #fff; }
+  .wall-fav.active svg { color: #ffcb45; }
+  .wall-fav.active svg path { fill: currentColor; }
+  .wall-fav:active::before { transform: scale(0.92); }
 
   .wall-topbar {
     position: absolute;
@@ -1044,6 +1072,34 @@
     -webkit-backdrop-filter: blur(10px);
   }
   .viewer-reselect.show { display: flex; }
+  /* "続きから／最初から" prompt shown over the cover when reopening a PDF
+     that was left part-way through. */
+  .viewer-resume {
+    position: absolute;
+    left: 20px; right: 20px;
+    bottom: 22%;
+    z-index: 5;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    text-align: center;
+    padding: 20px 18px;
+    border-radius: 18px;
+    background: rgba(8,9,13,0.72);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    max-width: 420px;
+    margin: 0 auto;
+  }
+  .viewer-resume.show { display: flex; }
+  .viewer-resume p {
+    margin: 0 0 4px;
+    color: rgba(255,255,255,0.9);
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .viewer-resume .btn { width: 100%; padding: 14px 18px; }
   .viewer-reselect p {
     margin: 0;
     color: rgba(255,255,255,0.82);
@@ -1323,6 +1379,16 @@
   </div>
   <div class="field">
     <div class="field-row">
+      <span class="field-label">読みかけのPDFを開いたとき</span>
+    </div>
+    <div class="segmented" id="resume-toggle" role="group" aria-label="読みかけのPDFを開いたとき">
+      <button type="button" id="resume-ask" aria-pressed="true">毎回確認</button>
+      <button type="button" id="resume-continue" aria-pressed="false">続きから</button>
+      <button type="button" id="resume-start" aria-pressed="false">最初から</button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
       <span class="field-label">一覧の並び順</span>
     </div>
     <div class="segmented" id="library-sort-toggle" role="group" aria-label="一覧の並び順">
@@ -1411,11 +1477,19 @@
     </button>
     <span class="viewer-title" id="viewer-title"></span>
     <span class="viewer-page" id="viewer-page"></span>
+    <button class="viewer-fav" id="viewer-open-folder" aria-label="このPDFがあるフォルダを開く" hidden>
+      <svg viewBox="0 0 16 16" fill="none"><path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3l1.2 1.6h4.8A1.5 1.5 0 0 1 14 7.1v5.4A1.5 1.5 0 0 1 12.5 14h-9A1.5 1.5 0 0 1 2 12.5v-7z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </button>
     <button class="viewer-fav" id="viewer-fav" aria-label="お気に入りに追加" aria-pressed="false">
       <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
     </button>
   </div>
-  <div class="viewer-bottombar" id="viewer-bottombar">タップ・スワイプでページ送り / 中央タップでページ一覧 / 上スワイプで閉じる</div>
+  <div class="viewer-bottombar" id="viewer-bottombar" hidden></div>
+  <div class="viewer-resume" id="viewer-resume" role="dialog" aria-label="どこから読むか">
+    <p id="viewer-resume-text">前回は 12 / 120 ページまで読んでいました</p>
+    <button class="btn btn-primary" id="viewer-resume-continue">続きから読む</button>
+    <button class="btn btn-copyname" id="viewer-resume-start">最初から読む</button>
+  </div>
   <div class="viewer-slider" id="viewer-slider">
     <div class="viewer-slider-label" id="viewer-slider-label"></div>
     <div class="viewer-slider-track" id="viewer-slider-track">
@@ -1612,7 +1686,7 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -1682,6 +1756,7 @@
   var tilesValue = $("tiles-value");
   var toggleCaption = $("toggle-caption");
   var directionLtrBtn = $("direction-ltr");
+  var resumeBtns = { ask: $("resume-ask"), "continue": $("resume-continue"), start: $("resume-start") };
   var directionRtlBtn = $("direction-rtl");
   var librarySortBtns = { random: $("library-sort-random"), name: $("library-sort-name"), added: $("library-sort-added") };
   var shuffleMinutesField = $("shuffle-minutes-field");
@@ -1864,7 +1939,6 @@
     libraryToggleLabel.textContent = "取り込み済みのPDFを見る（" + covers.length + "冊）";
 
     var folderMode = settings.libraryViewMode === "folder";
-    if (!folderMode) currentFolderView = null;
 
     var visible = orderedCovers(favFilterActive ? covers.filter(function (c) { return !!c.favorite; }) : covers);
 
@@ -1874,16 +1948,17 @@
     // the browser lays out and paints once instead of once per card.
     var frag = document.createDocumentFragment();
 
-    if (folderMode && currentFolderView !== null) {
-      // --- Drilled into one folder: flat list of just its PDFs ---
-      var folderCovers = visible.filter(function (c) { return c.folder === currentFolderView; });
+    if (currentFolderView !== null) {
+      // --- Drilled into one folder: every PDF in it ---
+      // Deliberately ignores the favourites filter: opening a folder from
+      // the favourites view is how you get to the rest of that series.
+      var folderCovers = covers.filter(function (c) { return c.folder === currentFolderView; });
       // Random order is for browsing the top level; once you've opened a
       // folder you want its contents in a predictable order -- by file name,
       // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
       folderCovers.sort(coverByName);
       folderBreadcrumb.hidden = false;
       folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
-      if (favFilterActive && folderCovers.length === 0) renderEmptyFavMessage(frag);
       folderCovers.forEach(function (c) { frag.appendChild(buildCard(c)); });
       appendAddTile(frag);
     } else if (!folderMode) {
@@ -1983,6 +2058,7 @@
       fav.setAttribute("aria-pressed", c.favorite ? "true" : "false");
     }
     syncViewerFavButton();
+    syncWallFavs();
     idbPut("covers", c);
   }
 
@@ -2119,6 +2195,12 @@
   // that sits directly in the picked root (or one picked individually via
   // the single-file input, which never sets webkitRelativePath at all)
   // has no subfolder, so it comes back as "" -- ungrouped.
+  // A PDF's identity in the library is its folder + file name, so
+  // "AuthorA/01.pdf" and "AuthorB/01.pdf" are two different books, while
+  // re-picking the same folder skips everything already imported.
+  function coverKey(folder, name) { return (folder || "") + "\u0000" + name; }
+  function fileKey(f) { return coverKey(folderFromFile(f), fileBaseName(f.name)); }
+
   function folderFromFile(file) {
     var rel = file.webkitRelativePath || "";
     if (!rel) return "";
@@ -2193,26 +2275,48 @@
     });
     if (files.length === 0) return;
 
-    var existingByName = {};
-    covers.forEach(function (c) { existingByName[c.name] = c; });
+    var existingByKey = {};    // folder + name -> cover
+    var existingByName = {};   // name -> [covers]
+    covers.forEach(function (c) {
+      existingByKey[coverKey(c.folder, c.name)] = c;
+      (existingByName[c.name] = existingByName[c.name] || []).push(c);
+    });
 
     var toAdd = [];
     var matched = []; // [cover, file] pairs for PDFs already in the library
+    var claimed = {}; // cover ids already matched in this pick
+    var batchKeys = {}; // keys already queued from this pick
     var folderChanged = false;
     files.forEach(function (f) {
-      var existing = existingByName[fileBaseName(f.name)];
-      if (existing) {
-        matched.push([existing, f]);
-        // Re-picking a folder can retroactively teach an already-imported
-        // cover which subfolder it lives in (e.g. it was first added one
-        // file at a time, or the folder's layout changed since).
-        var folder = folderFromFile(f);
-        if (folder !== (existing.folder || "")) {
-          existing.folder = folder;
-          folderChanged = true;
-          idbPut("covers", existing);
+      var name = fileBaseName(f.name);
+      var folder = folderFromFile(f);
+      var key = coverKey(folder, name);
+      var existing = existingByKey[key];
+      if (!existing) {
+        var sameName = (existingByName[name] || []).filter(function (c) { return !claimed[c.id]; });
+        if (!folder) {
+          // Picked one file at a time (no folder info): any book of that
+          // name already in the library counts as the same book.
+          existing = sameName[0];
+        } else {
+          // From a folder: a same-named book that was added one file at a
+          // time (so it has no folder yet) is the same book -- adopt it into
+          // this folder instead of importing a second copy. Same-named books
+          // that already belong to another folder are left alone.
+          existing = sameName.filter(function (c) { return !c.folder; })[0];
+          if (existing) {
+            existing.folder = folder;
+            folderChanged = true;
+            idbPut("covers", existing);
+          }
         }
-      } else {
+      }
+      if (existing) {
+        claimed[existing.id] = true;
+        matched.push([existing, f]);
+      } else if (!batchKeys[key]) {
+        // Guard against the same folder/name appearing twice in one pick.
+        batchKeys[key] = true;
         toAdd.push(f);
       }
     });
@@ -2249,9 +2353,9 @@
     }
     // Files already sitting in the queue from an earlier pick shouldn't be
     // queued twice.
-    var queuedNames = {};
-    importQueue.forEach(function (f) { queuedNames[fileBaseName(f.name)] = true; });
-    toAdd = toAdd.filter(function (f) { return !queuedNames[fileBaseName(f.name)]; });
+    var queuedKeys = {};
+    importQueue.forEach(function (f) { queuedKeys[fileKey(f)] = true; });
+    toAdd = toAdd.filter(function (f) { return !queuedKeys[fileKey(f)]; });
     enqueueImport(toAdd);
   }
 
@@ -2317,6 +2421,18 @@
   function runImportStep() {
     if (importCancelRequested || importQueue.length === 0) { finishImport(); return; }
     var file = importQueue.shift();
+    // Last line of defence against duplicates: if a book with the same
+    // folder + name landed in the library while this file sat in the queue,
+    // skip it entirely. (The old check ran *after* the record was already
+    // written, so the duplicate stayed in the database and reappeared on
+    // the next launch.)
+    var k = fileKey(file);
+    if (covers.some(function (c) { return coverKey(c.folder, c.name) === k; })) {
+      importDone++;
+      updateImportBar();
+      advanceImport();
+      return;
+    }
     materialize(file)
       .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
       .then(function (dataUrl) {
@@ -2324,10 +2440,7 @@
         return idbPut("covers", record).then(function (newId) {
           record.id = newId;
           sessionPdfCache.set(newId, file);
-          // Same file picked twice while still queued (e.g. the same folder
-          // re-picked mid-import): the second copy matched nothing when it
-          // was queued, so guard here instead of creating a duplicate.
-          if (!covers.some(function (c) { return c.name === record.name; })) covers.push(record);
+          covers.push(record);
           return persistPdfBlob(newId, file);
         });
       })
@@ -2560,6 +2673,9 @@
     tilesValue.textContent = settings.tiles + "枚";
     toggleCaption.setAttribute("aria-checked", settings.caption ? "true" : "false");
     directionLtrBtn.setAttribute("aria-pressed", isRtl() ? "false" : "true");
+    Object.keys(resumeBtns).forEach(function (k) {
+      resumeBtns[k].setAttribute("aria-pressed", (settings.resumeMode || "ask") === k ? "true" : "false");
+    });
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
@@ -2632,15 +2748,27 @@
       var imgB = document.createElement("img");
       var cap = document.createElement("div");
       cap.className = "cap";
+      var fav = document.createElement("button");
+      fav.type = "button";
+      fav.className = "wall-fav";
+      fav.setAttribute("aria-label", "お気に入りに追加");
+      fav.setAttribute("aria-pressed", "false");
+      fav.innerHTML = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6l2.35 4.85 5.25.63-3.86 3.72 1 5.7L10 14.75l-4.74 2.75 1-5.7-3.86-3.72 5.25-.63L10 2.6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
       el.appendChild(imgA);
       el.appendChild(imgB);
       el.appendChild(cap);
+      el.appendChild(fav);
       wallGrid.appendChild(el);
 
-      var tile = { el: el, imgA: imgA, imgB: imgB, capEl: cap, showingA: true, current: null };
+      var tile = { el: el, imgA: imgA, imgB: imgB, capEl: cap, favEl: fav, showingA: true, current: null };
       (function (t) {
         t.el.addEventListener("click", function () {
           if (t.current) openViewer(t.current);
+        });
+        // Star on the cover itself: favourite without opening the PDF.
+        t.favEl.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          if (t.current) toggleFavorite(t.current.id);
         });
       })(tile);
       wallTiles.push(tile);
@@ -2665,7 +2793,16 @@
     tile.showingA = !tile.showingA;
     tile.capEl.textContent = record.name;
     tile.capEl.classList.toggle("show", !!settings.caption);
+    syncWallTileFav(tile);
   }
+
+  function syncWallTileFav(tile) {
+    var on = !!(tile.current && tile.current.favorite);
+    tile.favEl.classList.toggle("active", on);
+    tile.favEl.setAttribute("aria-pressed", on ? "true" : "false");
+    tile.favEl.setAttribute("aria-label", on ? "お気に入りから外す" : "お気に入りに追加");
+  }
+  function syncWallFavs() { wallTiles.forEach(syncWallTileFav); }
 
   function currentlyShownIds() {
     return wallTiles.map(function (t) { return t.current ? t.current.id : null; }).filter(function (x) { return x !== null; });
@@ -2721,6 +2858,11 @@
   var viewerClose = $("viewer-close");
   var viewerFav = $("viewer-fav");
   var viewerBottombar = $("viewer-bottombar");
+  var viewerResume = $("viewer-resume");
+  var viewerResumeText = $("viewer-resume-text");
+  var viewerResumeContinue = $("viewer-resume-continue");
+  var viewerResumeStart = $("viewer-resume-start");
+  var viewerOpenFolder = $("viewer-open-folder");
   var viewerSlider = $("viewer-slider");
   var viewerSliderLabel = $("viewer-slider-label");
   var viewerSliderTrack = $("viewer-slider-track");
@@ -2755,6 +2897,8 @@
     viewerPageNum = 1;
     viewer.classList.add("open");
     viewerReselect.classList.remove("show");
+    viewerResume.classList.remove("show");
+    viewerOpenFolder.hidden = !record.folder;
 
     var cached = sessionPdfCache.get(record.id);
     if (cached) {
@@ -2791,21 +2935,69 @@
     window.pdfjsLib.getDocument({ data: buffer }).promise.then(function (pdf) {
       viewerPdf = pdf;
       viewerPageCount = pdf.numPages;
-      viewerImg.style.display = "none";
-      viewerTrack.style.display = "flex";
       canvasOrder = [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext];
       viewerSlotLeft.appendChild(viewerCanvasPrev);
       viewerSlotMid.appendChild(viewerCanvasCur);
       viewerSlotRight.appendChild(viewerCanvasNext);
       [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext].forEach(function (c) { c._renderedPage = null; });
       closeSlider();
-      syncViewerTrack(true);
+      var last = viewerRecord && viewerRecord.lastPage;
+      var canResume = last > 1 && last <= viewerPageCount;
+      var mode = settings.resumeMode || "ask";
+      if (canResume && mode === "ask") {
+        // Keep the cover up and let the reader choose before rendering.
+        viewerSpinner.classList.remove("show");
+        viewerResumeText.textContent = "前回は " + last + " / " + viewerPageCount + " ページまで読んでいました";
+        viewerResumeContinue.textContent = "続きから読む（" + last + "ページ）";
+        viewerResume.classList.add("show");
+        return;
+      }
+      startViewerAt(canResume && mode === "continue" ? last : 1);
     }).catch(function (err) {
       console.error("PDFを開けませんでした", err);
       viewerSpinner.classList.remove("show");
       viewerPageLabel.textContent = "読み込みエラー";
     });
   }
+
+  function startViewerAt(pageNum) {
+    viewerResume.classList.remove("show");
+    viewerPageNum = Math.max(1, Math.min(viewerPageCount, pageNum));
+    viewerImg.style.display = "none";
+    viewerTrack.style.display = "flex";
+    syncViewerTrack(true);
+    rememberPage();
+  }
+  viewerResumeContinue.addEventListener("click", function () {
+    if (!viewerPdf) return;
+    startViewerAt(viewerRecord && viewerRecord.lastPage || 1);
+  });
+  viewerResumeStart.addEventListener("click", function () {
+    if (!viewerPdf) return;
+    startViewerAt(1);
+  });
+
+  // Reading position: stored on the cover record as lastPage. Writes are
+  // debounced (a cover record carries its thumbnail, so we don't want to
+  // rewrite it on every single page turn) and flushed when the viewer
+  // closes or the app goes to the background.
+  var pageSaveTimer = null;
+  function rememberPage() {
+    if (!viewerRecord || !viewerPdf) return;
+    if (viewerRecord.lastPage === viewerPageNum) return;
+    viewerRecord.lastPage = viewerPageNum;
+    clearTimeout(pageSaveTimer);
+    var rec = viewerRecord;
+    pageSaveTimer = setTimeout(function () { pageSaveTimer = null; idbPut("covers", rec); }, 1200);
+  }
+  function flushPageSave() {
+    if (!pageSaveTimer) return;
+    clearTimeout(pageSaveTimer);
+    pageSaveTimer = null;
+    if (viewerRecord) idbPut("covers", viewerRecord);
+  }
+  document.addEventListener("visibilitychange", function () { if (document.hidden) flushPageSave(); });
+  window.addEventListener("pagehide", flushPageSave);
 
   viewerReselectBtn.addEventListener("click", function () {
     reselectInput.value = "";
@@ -2891,8 +3083,8 @@
     var files = Array.prototype.slice.call(ev.target.files || []);
     if (files.length === 0) return;
 
-    var byName = {};
-    covers.forEach(function (c) { byName[c.name] = c; });
+    var byKey = {}, byName = {};
+    covers.forEach(function (c) { byKey[coverKey(c.folder, c.name)] = c; if (!byName[c.name]) byName[c.name] = c; });
 
     // Just caching the File reference for every match is instant (no bytes
     // are read yet), so this works the same whether the folder has a
@@ -2901,7 +3093,7 @@
     var toBackfill = [];
     files.forEach(function (f) {
       if (!(f.type === "application/pdf" || /\.pdf$/i.test(f.name))) return;
-      var cover = byName[fileBaseName(f.name)];
+      var cover = byKey[fileKey(f)] || byName[fileBaseName(f.name)];
       if (cover) {
         sessionPdfCache.set(cover.id, f);
         matchCount++;
@@ -3067,6 +3259,7 @@
       var advance = isRtl() ? !revealedRight : revealedRight;
       viewerPageNum += advance ? 1 : -1;
       viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
+      rememberPage();
       setTrackTransform(0);
       renderAllSlots(); // only the one newly-exposed lookahead slot actually redraws
       if (sliderOpen) setSliderVisual(viewerPageNum);
@@ -3145,6 +3338,7 @@
     if (pageNum === viewerPageNum) return;
     viewerPageNum = pageNum;
     syncViewerTrack(false);
+    rememberPage();
   }
 
   // Renders the target page small, into its own dedicated canvas -- never
@@ -3351,6 +3545,8 @@
   });
 
   function closeViewer() {
+    flushPageSave();
+    viewerResume.classList.remove("show");
     viewer.classList.remove("open");
     if (viewerPdf) { try { viewerPdf.destroy(); } catch (e) {} }
     viewerPdf = null;
@@ -3359,6 +3555,25 @@
   }
 
   viewerClose.addEventListener("click", closeViewer);
+
+  // Jump from a PDF (e.g. one opened from the favourites list or the
+  // random display) to the folder it lives in, showing all of its PDFs.
+  function openFolderInLibrary(folder) {
+    if (!folder) return;
+    closeViewer();
+    if (wall.classList.contains("open")) stopWall();
+    if (selectMode) exitSelectMode(false);
+    currentFolderView = folder;
+    if (!libraryPanel.classList.contains("open")) {
+      libraryPanel.classList.add("open");
+      libraryToggle.setAttribute("aria-expanded", "true");
+    }
+    renderLibrary();
+    try { libraryToggle.scrollIntoView({ block: "start" }); } catch (e) {}
+  }
+  viewerOpenFolder.addEventListener("click", function () {
+    if (viewerRecord) openFolderInLibrary(viewerRecord.folder);
+  });
 
   function syncViewerFavButton() {
     var isFav = !!(viewerRecord && viewerRecord.favorite);
@@ -3535,6 +3750,14 @@
     if (sliderOpen) setSliderVisual(viewerPageNum);
   }
   directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
+  Object.keys(resumeBtns).forEach(function (k) {
+    resumeBtns[k].addEventListener("click", function () {
+      saveSetting("resumeMode", k);
+      Object.keys(resumeBtns).forEach(function (j) {
+        resumeBtns[j].setAttribute("aria-pressed", j === k ? "true" : "false");
+      });
+    });
+  });
   directionRtlBtn.addEventListener("click", function () { setDirection("rtl"); });
   shuffleMinutesRange.addEventListener("input", function () {
     var v = parseInt(shuffleMinutesRange.value, 10);
