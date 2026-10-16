@@ -132,7 +132,8 @@
     z-index: 100000; /* above every sheet/overlay, below the privacy cover */
     background: var(--bg);
     display: none;
-    overflow-y: auto;
+    overflow: hidden; /* never a scroll layer: keeps iOS tap targets exact */
+    touch-action: none;
   }
   .lock.open { display: flex; align-items: center; justify-content: center; }
   .lock-inner {
@@ -150,7 +151,9 @@
   .lock-dots { display: flex; gap: 16px; }
   .lock-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-muted); }
   .lock-dots i.on { background: var(--text); border-color: var(--text); }
-  .lock-dots.shake { animation: lockShake 0.35s; }
+  .lock-dots.shake, .lock-face-btn.shake { animation: lockShake 0.35s; }
+  .lock-face-btn { padding: 16px 30px; font-size: 1rem; margin: 18px 0 8px; }
+  .lock-face-btn svg { width: 24px; height: 24px; }
   @keyframes lockShake {
     0%, 100% { transform: none; }
     20%, 60% { transform: translateX(-8px); }
@@ -1526,10 +1529,11 @@
     <div class="lock-title">表紙めくり</div>
     <div class="lock-msg" id="lock-msg">パスコードを入力</div>
     <div class="lock-dots" id="lock-dots"><i></i><i></i><i></i><i></i></div>
-    <div class="lock-keys" id="lock-keys"><button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button><button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button><button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button><button type="button" class="plain" data-k="face" aria-label="Face IDで解除"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5c1.4 1.1 3.6 1.1 5 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button type="button" data-k="0">0</button><button type="button" class="plain" data-k="del" aria-label="1文字消す"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7 6-7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10l4 4M16 10l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
+    <button type="button" class="btn btn-primary lock-face-btn" id="lock-face-btn" hidden><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5c1.4 1.1 3.6 1.1 5 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Face IDで解除</button>
+    <div class="lock-keys" id="lock-keys"><button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button><button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button><button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button><span aria-hidden="true"></span><button type="button" data-k="0">0</button><button type="button" class="plain" data-k="del" aria-label="1文字消す"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7 6-7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10l4 4M16 10l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
     <div class="lock-foot">
       <button type="button" class="link-btn" id="lock-cancel" hidden>キャンセル</button>
-      <button type="button" class="link-btn" id="lock-forgot" hidden>パスコードを忘れた場合</button>
+      <button type="button" class="link-btn" id="lock-forgot" hidden>解除できない場合</button>
     </div>
     <div class="lock-reset-note" id="lock-reset-note" hidden>
       <span id="lock-reset-text"></span>
@@ -1745,7 +1749,7 @@
       <span class="field-label">パスコードでロック</span>
       <button class="switch" id="toggle-lock" role="switch" aria-checked="false"></button>
     </div>
-    <div class="field-help" id="lock-help">オンにすると4桁のパスコードを設定します。</div>
+    <div class="field-help" id="lock-help">オンにするとFace IDでロックします（Face IDを使えない環境では4桁のパスコード）。</div>
   </div>
   <div class="field" id="lock-when-field" hidden>
     <div class="field-row">
@@ -1757,12 +1761,15 @@
       <button type="button" id="lock-when-always" aria-pressed="false">戻るたび</button>
     </div>
   </div>
-  <div class="field" id="lock-face-field" hidden>
+  <div class="field" id="lock-method-field" hidden>
     <div class="field-row">
-      <span class="field-label">Face IDでも解除する</span>
-      <button class="switch" id="toggle-lock-face" role="switch" aria-checked="false"></button>
+      <span class="field-label">解除の方法</span>
     </div>
-    <div class="field-help">初回にロック解除用のパスキーを1つ作ります（iPhoneの「パスワード」アプリに「表紙めくり」として保存されます）。ホーム画面に追加したGitHub版で使えます。</div>
+    <div class="segmented" role="group" aria-label="解除の方法">
+      <button type="button" id="lock-method-face" aria-pressed="true">Face ID</button>
+      <button type="button" id="lock-method-pin" aria-pressed="false">4桁パスコード</button>
+    </div>
+    <div class="field-help">Face IDは初回にロック解除用のパスキーを1つ作ります（iPhoneの「パスワード」アプリに「表紙めくり」として保存）。Face IDがうまくいかないときは、iPhoneのパスコードでも解除できます。ホーム画面に追加したGitHub版で使えます。</div>
   </div>
   <div class="field" id="lock-change-field" hidden>
     <div class="field-row">
@@ -4788,56 +4795,23 @@
     if (Date.now() - coverDismissedAt < 600) { ev.preventDefault(); ev.stopPropagation(); }
   }, true);
 
-  // Experimental: iOS takes the app-switcher snapshot as the app goes to
-  // the background, and by then blur / visibilitychange are too late for
-  // the page to repaint. The swipe up from the bottom edge that opens the
-  // switcher, though, starts as an ordinary touch on the page which iOS
-  // cancels (touchcancel) once its own gesture takes over -- while the app
-  // is still in front. Covering the screen right there gives the cover a
-  // chance to be painted before the snapshot is taken.
-  var EDGE_PX = 20; // the home-indicator strip only, below any control
-  var edgeTouch = false, edgeStartY = 0, edgeCoverByMove = false;
-  document.addEventListener("touchstart", function (ev) {
-    var t = ev.touches[0];
-    edgeTouch = !!t && ev.touches.length === 1 && t.clientY >= window.innerHeight - EDGE_PX;
-    edgeStartY = t ? t.clientY : 0;
-    edgeCoverByMove = false;
-  }, { passive: true, capture: true });
-  document.addEventListener("touchmove", function (ev) {
-    // Moving well up the screen means the page is scrolling, not the
-    // system gesture: a later cancel then isn't the app switcher.
-    var t = ev.touches[0];
-    if (edgeTouch && t && edgeStartY - t.clientY > 40) edgeTouch = false;
-  }, { passive: true, capture: true });
-  document.addEventListener("touchcancel", function () {
-    if (edgeTouch) {
-      showPrivacyCover();
-      if (lockActive() && settings.lockWhen === "always") openLock("unlock");
-    }
-    edgeTouch = false;
-  }, { passive: true, capture: true });
-  document.addEventListener("touchend", function () {
-    // An upward swipe that ended normally stayed inside the app.
-    if (edgeCoverByMove) hidePrivacyCover();
-    edgeTouch = false;
-    edgeCoverByMove = false;
-  }, { passive: true, capture: true });
-
   // ---------------------------------------------------------------
-  // パスコードロック (+ Face ID through a passkey)
+  // ロック: Face ID (a passkey) or a 4-digit code
   // ---------------------------------------------------------------
-  // The 4-digit code is stored only as a salted SHA-256 hash. It keeps
-  // people who pick up the phone out; it does not encrypt the PDFs.
-  // Face ID uses WebAuthn: a passkey made once on this device, and an
-  // unlock is "the passkey prompt succeeded" (Face ID is what Safari asks
-  // for). Forgetting the code never locks the owner out of the library for
-  // good: "パスコードを忘れた場合" starts a 24-hour wait after which the lock
-  // can be switched off from the lock screen itself.
+  // Face ID uses WebAuthn: a passkey made once on this device; an unlock is
+  // "the passkey prompt succeeded". iOS itself offers the iPhone passcode
+  // when Face ID fails, so no extra code is needed in that mode. The
+  // 4-digit code (stored only as a salted SHA-256 hash) is the fallback for
+  // places where passkeys can't be used. Either way this keeps people who
+  // pick up the phone out; it does not encrypt the PDFs. Forgetting / losing
+  // the means to unlock never locks the owner out of the library for good:
+  // "解除できない場合" starts a 24-hour wait after which the lock can be
+  // switched off from the lock screen itself.
   var lockEl = $("lock");
   var lockMsg = $("lock-msg");
   var lockDots = $("lock-dots");
   var lockKeys = $("lock-keys");
-  var lockFaceKey = lockKeys.querySelector('[data-k="face"]');
+  var lockFaceBtn = $("lock-face-btn");
   var lockCancel = $("lock-cancel");
   var lockForgot = $("lock-forgot");
   var lockResetNote = $("lock-reset-note");
@@ -4846,19 +4820,30 @@
   var toggleLock = $("toggle-lock");
   var lockHelp = $("lock-help");
   var lockWhenField = $("lock-when-field");
-  var lockFaceField = $("lock-face-field");
+  var lockMethodField = $("lock-method-field");
+  var lockMethodBtns = { face: $("lock-method-face"), pin: $("lock-method-pin") };
   var lockChangeField = $("lock-change-field");
   var lockWhenBtns = { launch: $("lock-when-launch"), away: $("lock-when-away"), always: $("lock-when-always") };
-  var toggleLockFace = $("toggle-lock-face");
   var lockChangeBtn = $("lock-change");
   var LOCK_RESET_MS = 24 * 60 * 60 * 1000;
   var LOCK_AWAY_MS = 5 * 60 * 1000;
   var lockMode = null; // null | "unlock" | "verify" | "setup"
   var lockDone = null, lockEntry = "", lockFirst = "", lockHiddenAt = 0, faceBusy = false;
+  var lockFaceUi = false, lockReturnToSheet = false;
 
-  function lockActive() { return !!(settings.lockEnabled && settings.lockHash); }
-  function faceAvailable() {
-    return !!(settings.lockFaceId && settings.lockCredId && window.PublicKeyCredential && navigator.credentials && navigator.credentials.get);
+  function passkeysSupported() {
+    return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create && navigator.credentials.get && window.crypto && crypto.getRandomValues);
+  }
+  // Stored settings from before "解除の方法" existed: a passkey that was
+  // switched on means Face ID, otherwise the code.
+  function lockMethod() {
+    if (settings.lockMethod === "face" || settings.lockMethod === "pin") return settings.lockMethod;
+    return settings.lockFaceId && settings.lockCredId ? "face" : "pin";
+  }
+  function faceAvailable() { return !!settings.lockCredId && passkeysSupported(); }
+  function lockActive() {
+    if (!settings.lockEnabled) return false;
+    return lockMethod() === "face" ? !!settings.lockCredId : !!settings.lockHash;
   }
   function toB64(bytes) { var str = ""; for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]); return btoa(str); }
   function fromB64(b) { var str = atob(b), a = new Uint8Array(str.length); for (var i = 0; i < str.length; i++) a[i] = str.charCodeAt(i); return a; }
@@ -4883,9 +4868,10 @@
     lockMsg.classList.toggle("err", !!isErr);
   }
   function shakeLock() {
-    lockDots.classList.remove("shake");
-    void lockDots.offsetWidth;
-    lockDots.classList.add("shake");
+    var el = lockFaceUi ? lockFaceBtn : lockDots;
+    el.classList.remove("shake");
+    void el.offsetWidth;
+    el.classList.add("shake");
   }
   function syncResetNote() {
     var at = settings.lockResetAt;
@@ -4898,23 +4884,37 @@
     } else {
       var h = Math.floor(left / 3600000), m = Math.ceil((left % 3600000) / 60000);
       if (m === 60) { h++; m = 0; }
-      lockResetText.textContent = "ロック解除の申請中です。あと" + h + "時間" + m + "分で解除できるようになります。正しいパスコードかFace IDで解除すると申請は取り消されます。";
+      lockResetText.textContent = "ロック解除の申請中です。あと" + h + "時間" + m + "分で解除できるようになります。正しく解除すると申請は取り消されます。";
       lockResetGo.hidden = true;
     }
   }
   function openLock(mode, done) {
+    // The settings sheet is a separate scrolling layer; stacking the lock
+    // screen over it is what confused iOS about which key was pressed. Put
+    // the sheet away while the lock screen is up and bring it back after.
+    if (mode !== "unlock" && sheet.classList.contains("open")) { lockReturnToSheet = true; closeSheet(); }
+    if (mode === "unlock") lockReturnToSheet = false;
     lockMode = mode;
     lockDone = done || null;
     lockEntry = "";
     lockFirst = "";
+    lockFaceUi = mode !== "setup" && lockMethod() === "face" && faceAvailable();
     renderLockDots();
-    setLockMsg(mode === "setup" ? "新しいパスコード（4桁）を入力" : mode === "verify" ? "現在のパスコードを入力" : "パスコードを入力");
+    lockDots.hidden = lockFaceUi;
+    lockKeys.hidden = lockFaceUi;
+    lockFaceBtn.hidden = !lockFaceUi;
+    if (lockFaceUi) setLockMsg(mode === "verify" ? "Face IDで確認してください" : "Face IDでロックを解除");
+    else setLockMsg(mode === "setup" ? "新しいパスコード（4桁）を入力" : mode === "verify" ? "現在のパスコードを入力" : "パスコードを入力");
     lockCancel.hidden = mode === "unlock";
     lockForgot.hidden = mode !== "unlock";
-    lockFaceKey.classList.toggle("off", mode === "setup" || !faceAvailable());
     syncResetNote();
     lockEl.classList.add("open");
-    if (mode === "unlock" && faceAvailable() && !document.hidden) setTimeout(tryFaceUnlock, 300);
+    if (lockFaceUi) {
+      // From a tap (verify): call right away so the tap still counts as the
+      // user gesture WebKit wants. On launch / return: shortly after showing.
+      if (mode === "verify") tryFaceUnlock();
+      else if (!document.hidden) setTimeout(tryFaceUnlock, 350);
+    }
   }
   function closeLock() {
     lockEl.classList.remove("open");
@@ -4923,15 +4923,28 @@
     lockEntry = "";
     lockFirst = "";
   }
+  function finishLockFlow(ret) {
+    // Reopen the settings sheet once no lock step is pending any more.
+    if (lockMode) { lockReturnToSheet = ret; return; }
+    lockReturnToSheet = false;
+    if (ret) openSheet();
+  }
   function lockSucceeded() {
-    var done = lockDone;
+    var done = lockDone, ret = lockReturnToSheet;
     if (settings.lockResetAt) saveSetting("lockResetAt", 0);
     closeLock();
     if (done) done();
+    finishLockFlow(ret);
+  }
+  function cancelLock() {
+    if (lockMode === "unlock") return;
+    var ret = lockReturnToSheet;
+    closeLock();
+    syncLockUI();
+    finishLockFlow(ret);
   }
   function onLockKey(k) {
-    if (!lockMode) return;
-    if (k === "face") { tryFaceUnlock(); return; }
+    if (!lockMode || lockFaceUi) return;
     if (k === "del") { lockEntry = lockEntry.slice(0, -1); renderLockDots(); return; }
     if (lockEntry.length >= 4) return;
     lockEntry += k;
@@ -4969,135 +4982,190 @@
       setLockMsg("パスコードが違います", true);
     });
   }
-  lockKeys.addEventListener("click", function (ev) {
-    var b = ev.target.closest ? ev.target.closest("button") : null;
-    if (b && b.dataset.k) onLockKey(b.dataset.k);
-  });
+
+  // Lock-screen taps: the key is chosen from the finger's position against
+  // each button's on-screen rectangle (not from iOS's hit-test), and acted
+  // on at touchend so a fast sequence of digits never lags or doubles up.
+  function lockButtonAt(x, y) {
+    var bs = lockEl.querySelectorAll("button");
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      if (b.closest("[hidden]") || b.classList.contains("off") || !b.offsetParent) continue;
+      if (inRect(b, x, y)) return b;
+    }
+    return null;
+  }
+  function activateLockButton(b) {
+    if (b.dataset.k) onLockKey(b.dataset.k);
+    else if (b === lockFaceBtn) tryFaceUnlock();
+    else if (b === lockCancel) cancelLock();
+    else if (b === lockForgot) requestLockReset();
+    else if (b === lockResetGo) resetLockNow();
+  }
+  var lockTouchAt = 0, lockTouchStart = null;
+  lockEl.addEventListener("touchstart", function (ev) {
+    var t = ev.touches[0];
+    lockTouchStart = t ? { x: t.clientX, y: t.clientY } : null;
+  }, { passive: true });
+  lockEl.addEventListener("touchend", function (ev) {
+    var t = ev.changedTouches && ev.changedTouches[0];
+    if (!t) return;
+    ev.preventDefault(); // no delayed synthetic click on top of this
+    lockTouchAt = Date.now();
+    if (lockTouchStart && Math.abs(t.clientX - lockTouchStart.x) + Math.abs(t.clientY - lockTouchStart.y) > 24) return;
+    var b = lockButtonAt(t.clientX, t.clientY);
+    if (b) activateLockButton(b);
+  }, { passive: false });
+  lockEl.addEventListener("click", function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (Date.now() - lockTouchAt < 800) return; // already handled at touchend
+    var fromPointer = ev.isTrusted && !(ev.clientX === 0 && ev.clientY === 0);
+    var b = fromPointer ? lockButtonAt(ev.clientX, ev.clientY) : (ev.target.closest ? ev.target.closest("button") : null);
+    if (b) activateLockButton(b);
+  }, true);
   document.addEventListener("keydown", function (ev) {
     if (!lockMode) return;
     if (/^[0-9]$/.test(ev.key)) { ev.preventDefault(); onLockKey(ev.key); }
     else if (ev.key === "Backspace") { ev.preventDefault(); onLockKey("del"); }
-    else if (ev.key === "Escape" && lockMode !== "unlock") closeLock();
+    else if (ev.key === "Escape") cancelLock();
   });
-  lockCancel.addEventListener("click", function () { if (lockMode !== "unlock") { closeLock(); syncLockUI(); } });
 
   function tryFaceUnlock() {
-    if (!lockMode || lockMode === "setup" || !faceAvailable() || faceBusy) return;
+    if (!lockMode || !lockFaceUi || faceBusy) return;
     faceBusy = true;
-    navigator.credentials.get({ publicKey: {
-      challenge: randomBytes(32),
-      allowCredentials: [{ type: "public-key", id: fromB64(settings.lockCredId) }],
-      userVerification: "required",
-      timeout: 60000
-    } }).then(function (cred) {
+    var p;
+    try {
+      p = navigator.credentials.get({ publicKey: {
+        challenge: randomBytes(32),
+        allowCredentials: [{ type: "public-key", id: fromB64(settings.lockCredId) }],
+        userVerification: "required",
+        timeout: 60000
+      } });
+    } catch (e) { p = Promise.reject(e); }
+    p.then(function (cred) {
       faceBusy = false;
-      if (cred && lockMode && lockMode !== "setup") lockSucceeded();
+      if (cred && lockMode && lockFaceUi) lockSucceeded();
     }).catch(function (err) {
       faceBusy = false;
       console.warn("Face ID unlock failed", err && err.name);
-      if (lockMode && lockMode !== "setup") setLockMsg("パスコードを入力（Face IDは左下の顔のボタン）");
+      if (lockMode && lockFaceUi) setLockMsg("下のボタンを押してFace IDで解除してください");
     });
   }
   // Must run straight from the tap: WebKit only shows the passkey prompt
   // for a user gesture.
-  function enableFaceId() {
-    if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.create) {
-      alert("この環境ではFace IDを使えません。");
-      return;
-    }
-    navigator.credentials.create({ publicKey: {
-      challenge: randomBytes(32),
-      rp: { name: "表紙めくり" },
-      user: { id: randomBytes(16), name: "表紙めくり", displayName: "表紙めくり（ロック解除用）" },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
-      timeout: 60000,
-      attestation: "none"
-    } }).then(function (cred) {
+  function createPasskey(onOk, onFail) {
+    if (!passkeysSupported()) { onFail({ name: "NotSupportedError" }); return; }
+    var p;
+    try {
+      p = navigator.credentials.create({ publicKey: {
+        challenge: randomBytes(32),
+        rp: { name: "表紙めくり" },
+        user: { id: randomBytes(16), name: "表紙めくり", displayName: "表紙めくり（ロック解除用）" },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+        timeout: 60000,
+        attestation: "none"
+      } });
+    } catch (e) { p = Promise.reject(e); }
+    p.then(function (cred) {
       saveSetting("lockCredId", toB64(new Uint8Array(cred.rawId)));
       saveSetting("lockFaceId", true);
-      syncLockUI();
+      saveSetting("lockMethod", "face");
+      onOk();
     }).catch(function (err) {
       console.warn("passkey creation failed", err);
-      var name = err && err.name;
-      if (name !== "NotAllowedError" && name !== "AbortError") {
-        alert("Face IDを設定できませんでした（" + (name || "エラー") + "）。ホーム画面に追加したGitHub版でお試しください。");
-      }
+      onFail(err || {});
+    });
+  }
+  function setupPinLock() {
+    openLock("setup", function () {
+      saveSetting("lockMethod", "pin");
+      saveSetting("lockEnabled", true);
       syncLockUI();
     });
   }
-
-  function syncLockUI() {
-    var on = lockActive();
-    toggleLock.setAttribute("aria-checked", on ? "true" : "false");
-    lockHelp.textContent = on
-      ? "パスコードを忘れた場合も、ロック画面から24時間後に解除できます（PDFは消えません）。"
-      : "オンにすると4桁のパスコードを設定します。";
-    lockWhenField.hidden = !on;
-    lockFaceField.hidden = !on;
-    lockChangeField.hidden = !on;
-    var w = settings.lockWhen || "launch";
-    Object.keys(lockWhenBtns).forEach(function (k) { lockWhenBtns[k].setAttribute("aria-pressed", w === k ? "true" : "false"); });
-    toggleLockFace.setAttribute("aria-checked", faceAvailable() ? "true" : "false");
-  }
-  toggleLock.addEventListener("click", function () {
-    if (!lockActive()) {
-      openLock("setup", function () { saveSetting("lockEnabled", true); syncLockUI(); });
-    } else {
-      openLock("verify", function () {
-        saveSetting("lockEnabled", false);
-        saveSetting("lockHash", "");
-        saveSetting("lockFaceId", false);
-        saveSetting("lockCredId", "");
-        syncLockUI();
-      });
-    }
-  });
-  Object.keys(lockWhenBtns).forEach(function (k) {
-    lockWhenBtns[k].addEventListener("click", function () { saveSetting("lockWhen", k); syncLockUI(); });
-  });
-  toggleLockFace.addEventListener("click", function () {
-    if (faceAvailable()) {
-      saveSetting("lockFaceId", false);
-      saveSetting("lockCredId", "");
-      syncLockUI();
-    } else {
-      enableFaceId();
-    }
-  });
-  lockChangeBtn.addEventListener("click", function () {
-    openLock("verify", function () { openLock("setup", syncLockUI); });
-  });
-  lockForgot.addEventListener("click", function () {
-    if (settings.lockResetAt) { syncResetNote(); return; }
-    if (!confirm("パスコードを忘れた場合は、今から24時間後にこの画面でロックを解除できます（取り込んだPDFは消えません）。\n解除を申請しますか？")) return;
-    saveSetting("lockResetAt", Date.now());
-    syncResetNote();
-  });
-  lockResetGo.addEventListener("click", function () {
-    if (!settings.lockResetAt || Date.now() < settings.lockResetAt + LOCK_RESET_MS) return;
+  function clearLock() {
     saveSetting("lockEnabled", false);
     saveSetting("lockHash", "");
     saveSetting("lockFaceId", false);
     saveSetting("lockCredId", "");
-    saveSetting("lockResetAt", 0);
-    closeLock();
+    saveSetting("lockMethod", "");
     syncLockUI();
-    alert("ロックをオフにしました。必要なら設定から新しいパスコードを設定してください。");
+  }
+
+  function syncLockUI() {
+    var on = lockActive();
+    var m = lockMethod();
+    toggleLock.setAttribute("aria-checked", on ? "true" : "false");
+    lockHelp.textContent = on
+      ? "解除できなくなった場合も、ロック画面から24時間後に解除できます（PDFは消えません）。"
+      : "オンにするとFace IDでロックします（Face IDを使えない環境では4桁のパスコード）。";
+    lockWhenField.hidden = !on;
+    lockMethodField.hidden = !on;
+    lockChangeField.hidden = !on || m !== "pin";
+    Object.keys(lockMethodBtns).forEach(function (k) { lockMethodBtns[k].setAttribute("aria-pressed", m === k ? "true" : "false"); });
+    var w = settings.lockWhen || "launch";
+    Object.keys(lockWhenBtns).forEach(function (k) { lockWhenBtns[k].setAttribute("aria-pressed", w === k ? "true" : "false"); });
+  }
+  toggleLock.addEventListener("click", function () {
+    if (lockActive()) { openLock("verify", clearLock); return; }
+    if (!passkeysSupported()) { setupPinLock(); return; }
+    createPasskey(function () {
+      saveSetting("lockEnabled", true);
+      syncLockUI();
+    }, function (err) {
+      syncLockUI();
+      if (confirm("Face IDを設定できませんでした（" + (err.name || "エラー") + "）。\n代わりに4桁のパスコードでロックしますか？\n（Face IDはホーム画面に追加したGitHub版で使えます）")) setupPinLock();
+    });
   });
+  lockMethodBtns.face.addEventListener("click", function () {
+    if (lockMethod() === "face" && faceAvailable()) return;
+    createPasskey(syncLockUI, function (err) {
+      syncLockUI();
+      alert("Face IDを設定できませんでした（" + (err.name || "エラー") + "）。パスコードのままにします。");
+    });
+  });
+  lockMethodBtns.pin.addEventListener("click", function () {
+    if (lockMethod() === "pin") return;
+    openLock("verify", function () {
+      openLock("setup", function () {
+        saveSetting("lockMethod", "pin");
+        syncLockUI();
+      });
+    });
+  });
+  Object.keys(lockWhenBtns).forEach(function (k) {
+    lockWhenBtns[k].addEventListener("click", function () { saveSetting("lockWhen", k); syncLockUI(); });
+  });
+  lockChangeBtn.addEventListener("click", function () {
+    openLock("verify", function () { openLock("setup", syncLockUI); });
+  });
+  function requestLockReset() {
+    if (settings.lockResetAt) { syncResetNote(); return; }
+    if (!confirm("Face IDやパスコードで解除できない場合は、今から24時間後にこの画面でロックを解除できます（取り込んだPDFは消えません）。\n解除を申請しますか？")) return;
+    saveSetting("lockResetAt", Date.now());
+    syncResetNote();
+  }
+  function resetLockNow() {
+    if (!settings.lockResetAt || Date.now() < settings.lockResetAt + LOCK_RESET_MS) return;
+    saveSetting("lockResetAt", 0);
+    clearLock();
+    closeLock();
+    alert("ロックをオフにしました。必要なら設定からもう一度オンにしてください。");
+  }
   document.addEventListener("visibilitychange", function () {
     if (!lockActive()) return;
     if (document.hidden) {
       lockHiddenAt = Date.now();
-      // 戻るたび: lock right away, so the lock screen (not the book) is
-      // what's left on screen behind the app switcher too.
+      // 戻るたび: lock right away so the app is locked when it comes back.
       if (settings.lockWhen === "always" && lockMode !== "unlock") openLock("unlock");
       return;
     }
     if (settings.lockWhen === "away" && lockMode !== "unlock" && lockHiddenAt && Date.now() - lockHiddenAt >= LOCK_AWAY_MS) openLock("unlock");
     if (lockMode === "unlock") {
       syncResetNote();
-      if (faceAvailable()) setTimeout(tryFaceUnlock, 300);
+      if (lockFaceUi) setTimeout(tryFaceUnlock, 350);
     }
   });
 
