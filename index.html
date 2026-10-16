@@ -126,6 +126,68 @@
   }
   .privacy-cover.on { display: block; }
 
+  /* ---------- passcode lock ---------- */
+  .lock {
+    position: fixed; inset: 0;
+    z-index: 100000; /* above every sheet/overlay, below the privacy cover */
+    background: var(--bg);
+    display: none;
+    overflow-y: auto;
+  }
+  .lock.open { display: flex; align-items: center; justify-content: center; }
+  .lock-inner {
+    width: 100%;
+    max-width: 340px;
+    padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+  .lock-title { font-size: 1.05rem; font-weight: 700; color: var(--text); }
+  .lock-msg { font-size: 0.9rem; color: var(--text-muted); text-align: center; min-height: 1.4em; }
+  .lock-msg.err { color: #e2574c; }
+  .lock-dots { display: flex; gap: 16px; }
+  .lock-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-muted); }
+  .lock-dots i.on { background: var(--text); border-color: var(--text); }
+  .lock-dots.shake { animation: lockShake 0.35s; }
+  @keyframes lockShake {
+    0%, 100% { transform: none; }
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+  .lock-keys { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px 22px; margin-top: 6px; }
+  .lock-keys button {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    border: none;
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1.6rem;
+    font-weight: 500;
+    box-shadow: 0 1px 3px var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+  .lock-keys button:active { background: var(--border); }
+  .lock-keys button.plain { background: transparent; box-shadow: none; }
+  .lock-keys button.off { visibility: hidden; }
+  .lock-keys svg { width: 30px; height: 30px; }
+  .lock-foot { display: flex; gap: 20px; }
+  .lock-reset-note {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .field-help { font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; }
+
   /* 漫画 / 同人誌 switch on the first screen */
   .cat-switch {
     display: flex;
@@ -1437,6 +1499,22 @@
 
 <div class="edge-cover" aria-hidden="true"></div>
 <div class="privacy-cover" id="privacy-cover" aria-hidden="true"></div>
+<div class="lock" id="lock" role="dialog" aria-modal="true" aria-label="パスコードロック">
+  <div class="lock-inner">
+    <div class="lock-title">表紙めくり</div>
+    <div class="lock-msg" id="lock-msg">パスコードを入力</div>
+    <div class="lock-dots" id="lock-dots"><i></i><i></i><i></i><i></i></div>
+    <div class="lock-keys" id="lock-keys"><button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button><button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button><button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button><button type="button" class="plain" data-k="face" aria-label="Face IDで解除"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5c1.4 1.1 3.6 1.1 5 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button type="button" data-k="0">0</button><button type="button" class="plain" data-k="del" aria-label="1文字消す"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7 6-7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10l4 4M16 10l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
+    <div class="lock-foot">
+      <button type="button" class="link-btn" id="lock-cancel" hidden>キャンセル</button>
+      <button type="button" class="link-btn" id="lock-forgot" hidden>パスコードを忘れた場合</button>
+    </div>
+    <div class="lock-reset-note" id="lock-reset-note" hidden>
+      <span id="lock-reset-text"></span>
+      <button type="button" class="btn btn-primary" id="lock-reset-go" hidden>ロックを解除してオフにする</button>
+    </div>
+  </div>
+</div>
 <div class="app" id="app">
 
   <div class="brand">
@@ -1637,6 +1715,36 @@
     <div class="field-row">
       <span class="field-label">アプリ切り替え画面で黒く隠す</span>
       <button class="switch" id="toggle-privacy" role="switch" aria-checked="true"></button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">パスコードでロック</span>
+      <button class="switch" id="toggle-lock" role="switch" aria-checked="false"></button>
+    </div>
+    <div class="field-help" id="lock-help">オンにすると4桁のパスコードを設定します。</div>
+  </div>
+  <div class="field" id="lock-when-field" hidden>
+    <div class="field-row">
+      <span class="field-label">ロックするタイミング</span>
+    </div>
+    <div class="segmented" role="group" aria-label="ロックするタイミング">
+      <button type="button" id="lock-when-launch" aria-pressed="true">起動時のみ</button>
+      <button type="button" id="lock-when-away" aria-pressed="false">5分離れたら</button>
+      <button type="button" id="lock-when-always" aria-pressed="false">戻るたび</button>
+    </div>
+  </div>
+  <div class="field" id="lock-face-field" hidden>
+    <div class="field-row">
+      <span class="field-label">Face IDでも解除する</span>
+      <button class="switch" id="toggle-lock-face" role="switch" aria-checked="false"></button>
+    </div>
+    <div class="field-help">初回にロック解除用のパスキーを1つ作ります（iPhoneの「パスワード」アプリに「表紙めくり」として保存されます）。ホーム画面に追加したGitHub版で使えます。</div>
+  </div>
+  <div class="field" id="lock-change-field" hidden>
+    <div class="field-row">
+      <span class="field-label">パスコードを変更</span>
+      <button type="button" class="link-btn" id="lock-change">変更する</button>
     </div>
   </div>
   <div class="field">
@@ -1979,7 +2087,7 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -3187,6 +3295,7 @@
     togglePrivacy.setAttribute("aria-checked", settings.privacyCover !== false ? "true" : "false");
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
     syncViewerOptsUI();
+    syncLockUI();
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
     Object.keys(librarySortBtns).forEach(function (k) {
@@ -4612,6 +4721,318 @@
   // came back without a focus event).
   privacyCover.addEventListener("pointerdown", hidePrivacyCover);
 
+  // Experimental: iOS takes the app-switcher snapshot as the app goes to
+  // the background, and by then blur / visibilitychange are too late for
+  // the page to repaint. The swipe up from the bottom edge that opens the
+  // switcher, though, starts as an ordinary touch on the page which iOS
+  // cancels (touchcancel) once its own gesture takes over -- while the app
+  // is still in front. Covering the screen right there gives the cover a
+  // chance to be painted before the snapshot is taken.
+  var EDGE_PX = 34;
+  var edgeTouch = false, edgeStartY = 0, edgeCoverByMove = false;
+  document.addEventListener("touchstart", function (ev) {
+    var t = ev.touches[0];
+    edgeTouch = !!t && ev.touches.length === 1 && t.clientY >= window.innerHeight - EDGE_PX;
+    edgeStartY = t ? t.clientY : 0;
+    edgeCoverByMove = false;
+  }, { passive: true, capture: true });
+  document.addEventListener("touchmove", function (ev) {
+    if (!edgeTouch || edgeCoverByMove) return;
+    var t = ev.touches[0];
+    if (t && edgeStartY - t.clientY > 24) { edgeCoverByMove = true; showPrivacyCover(); }
+  }, { passive: true, capture: true });
+  document.addEventListener("touchcancel", function () {
+    if (edgeTouch) {
+      showPrivacyCover();
+      if (lockActive() && settings.lockWhen === "always") openLock("unlock");
+    }
+    edgeTouch = false;
+  }, { passive: true, capture: true });
+  document.addEventListener("touchend", function () {
+    // An upward swipe that ended normally stayed inside the app.
+    if (edgeCoverByMove) hidePrivacyCover();
+    edgeTouch = false;
+    edgeCoverByMove = false;
+  }, { passive: true, capture: true });
+
+  // ---------------------------------------------------------------
+  // パスコードロック (+ Face ID through a passkey)
+  // ---------------------------------------------------------------
+  // The 4-digit code is stored only as a salted SHA-256 hash. It keeps
+  // people who pick up the phone out; it does not encrypt the PDFs.
+  // Face ID uses WebAuthn: a passkey made once on this device, and an
+  // unlock is "the passkey prompt succeeded" (Face ID is what Safari asks
+  // for). Forgetting the code never locks the owner out of the library for
+  // good: "パスコードを忘れた場合" starts a 24-hour wait after which the lock
+  // can be switched off from the lock screen itself.
+  var lockEl = $("lock");
+  var lockMsg = $("lock-msg");
+  var lockDots = $("lock-dots");
+  var lockKeys = $("lock-keys");
+  var lockFaceKey = lockKeys.querySelector('[data-k="face"]');
+  var lockCancel = $("lock-cancel");
+  var lockForgot = $("lock-forgot");
+  var lockResetNote = $("lock-reset-note");
+  var lockResetText = $("lock-reset-text");
+  var lockResetGo = $("lock-reset-go");
+  var toggleLock = $("toggle-lock");
+  var lockHelp = $("lock-help");
+  var lockWhenField = $("lock-when-field");
+  var lockFaceField = $("lock-face-field");
+  var lockChangeField = $("lock-change-field");
+  var lockWhenBtns = { launch: $("lock-when-launch"), away: $("lock-when-away"), always: $("lock-when-always") };
+  var toggleLockFace = $("toggle-lock-face");
+  var lockChangeBtn = $("lock-change");
+  var LOCK_RESET_MS = 24 * 60 * 60 * 1000;
+  var LOCK_AWAY_MS = 5 * 60 * 1000;
+  var lockMode = null; // null | "unlock" | "verify" | "setup"
+  var lockDone = null, lockEntry = "", lockFirst = "", lockHiddenAt = 0, faceBusy = false;
+
+  function lockActive() { return !!(settings.lockEnabled && settings.lockHash); }
+  function faceAvailable() {
+    return !!(settings.lockFaceId && settings.lockCredId && window.PublicKeyCredential && navigator.credentials && navigator.credentials.get);
+  }
+  function toB64(bytes) { var str = ""; for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]); return btoa(str); }
+  function fromB64(b) { var str = atob(b), a = new Uint8Array(str.length); for (var i = 0; i < str.length; i++) a[i] = str.charCodeAt(i); return a; }
+  function randomBytes(n) { var a = new Uint8Array(n); crypto.getRandomValues(a); return a; }
+  function hashPin(salt, pin) {
+    var text = salt + ":" + pin;
+    if (window.crypto && crypto.subtle && window.TextEncoder) {
+      return crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)).then(function (buf) {
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+      });
+    }
+    var h = 2166136261; // FNV-1a fallback for very old engines
+    for (var i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return Promise.resolve("f" + h.toString(16));
+  }
+
+  function renderLockDots() {
+    Array.prototype.forEach.call(lockDots.children, function (d, i) { d.classList.toggle("on", i < lockEntry.length); });
+  }
+  function setLockMsg(text, isErr) {
+    lockMsg.textContent = text;
+    lockMsg.classList.toggle("err", !!isErr);
+  }
+  function shakeLock() {
+    lockDots.classList.remove("shake");
+    void lockDots.offsetWidth;
+    lockDots.classList.add("shake");
+  }
+  function syncResetNote() {
+    var at = settings.lockResetAt;
+    if (!at || lockMode !== "unlock") { lockResetNote.hidden = true; return; }
+    var left = at + LOCK_RESET_MS - Date.now();
+    lockResetNote.hidden = false;
+    if (left <= 0) {
+      lockResetText.textContent = "申請から24時間が経ちました。ロックを解除してオフにできます。";
+      lockResetGo.hidden = false;
+    } else {
+      var h = Math.floor(left / 3600000), m = Math.ceil((left % 3600000) / 60000);
+      if (m === 60) { h++; m = 0; }
+      lockResetText.textContent = "ロック解除の申請中です。あと" + h + "時間" + m + "分で解除できるようになります。正しいパスコードかFace IDで解除すると申請は取り消されます。";
+      lockResetGo.hidden = true;
+    }
+  }
+  function openLock(mode, done) {
+    lockMode = mode;
+    lockDone = done || null;
+    lockEntry = "";
+    lockFirst = "";
+    renderLockDots();
+    setLockMsg(mode === "setup" ? "新しいパスコード（4桁）を入力" : mode === "verify" ? "現在のパスコードを入力" : "パスコードを入力");
+    lockCancel.hidden = mode === "unlock";
+    lockForgot.hidden = mode !== "unlock";
+    lockFaceKey.classList.toggle("off", mode === "setup" || !faceAvailable());
+    syncResetNote();
+    lockEl.classList.add("open");
+    if (mode === "unlock" && faceAvailable() && !document.hidden) setTimeout(tryFaceUnlock, 300);
+  }
+  function closeLock() {
+    lockEl.classList.remove("open");
+    lockMode = null;
+    lockDone = null;
+    lockEntry = "";
+    lockFirst = "";
+  }
+  function lockSucceeded() {
+    var done = lockDone;
+    if (settings.lockResetAt) saveSetting("lockResetAt", 0);
+    closeLock();
+    if (done) done();
+  }
+  function onLockKey(k) {
+    if (!lockMode) return;
+    if (k === "face") { tryFaceUnlock(); return; }
+    if (k === "del") { lockEntry = lockEntry.slice(0, -1); renderLockDots(); return; }
+    if (lockEntry.length >= 4) return;
+    lockEntry += k;
+    renderLockDots();
+    if (lockEntry.length < 4) return;
+    var entry = lockEntry, mode = lockMode;
+    if (mode === "setup") {
+      if (!lockFirst) {
+        lockFirst = entry;
+        setTimeout(function () { if (lockMode !== "setup") return; lockEntry = ""; renderLockDots(); setLockMsg("確認のため、もう一度入力"); }, 160);
+        return;
+      }
+      if (entry !== lockFirst) {
+        lockFirst = "";
+        lockEntry = "";
+        shakeLock();
+        setTimeout(renderLockDots, 200);
+        setLockMsg("一致しませんでした。新しいパスコードをもう一度入力してください", true);
+        return;
+      }
+      var salt = toB64(randomBytes(16));
+      hashPin(salt, entry).then(function (h) {
+        saveSetting("lockSalt", salt);
+        saveSetting("lockHash", h);
+        lockSucceeded();
+      });
+      return;
+    }
+    hashPin(settings.lockSalt || "", entry).then(function (h) {
+      if (lockMode !== mode) return;
+      if (h === settings.lockHash) { lockSucceeded(); return; }
+      lockEntry = "";
+      shakeLock();
+      setTimeout(renderLockDots, 200);
+      setLockMsg("パスコードが違います", true);
+    });
+  }
+  lockKeys.addEventListener("click", function (ev) {
+    var b = ev.target.closest ? ev.target.closest("button") : null;
+    if (b && b.dataset.k) onLockKey(b.dataset.k);
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (!lockMode) return;
+    if (/^[0-9]$/.test(ev.key)) { ev.preventDefault(); onLockKey(ev.key); }
+    else if (ev.key === "Backspace") { ev.preventDefault(); onLockKey("del"); }
+    else if (ev.key === "Escape" && lockMode !== "unlock") closeLock();
+  });
+  lockCancel.addEventListener("click", function () { if (lockMode !== "unlock") { closeLock(); syncLockUI(); } });
+
+  function tryFaceUnlock() {
+    if (!lockMode || lockMode === "setup" || !faceAvailable() || faceBusy) return;
+    faceBusy = true;
+    navigator.credentials.get({ publicKey: {
+      challenge: randomBytes(32),
+      allowCredentials: [{ type: "public-key", id: fromB64(settings.lockCredId) }],
+      userVerification: "required",
+      timeout: 60000
+    } }).then(function (cred) {
+      faceBusy = false;
+      if (cred && lockMode && lockMode !== "setup") lockSucceeded();
+    }).catch(function (err) {
+      faceBusy = false;
+      console.warn("Face ID unlock failed", err && err.name);
+      if (lockMode && lockMode !== "setup") setLockMsg("パスコードを入力（Face IDは左下の顔のボタン）");
+    });
+  }
+  // Must run straight from the tap: WebKit only shows the passkey prompt
+  // for a user gesture.
+  function enableFaceId() {
+    if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.create) {
+      alert("この環境ではFace IDを使えません。");
+      return;
+    }
+    navigator.credentials.create({ publicKey: {
+      challenge: randomBytes(32),
+      rp: { name: "表紙めくり" },
+      user: { id: randomBytes(16), name: "表紙めくり", displayName: "表紙めくり（ロック解除用）" },
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+      timeout: 60000,
+      attestation: "none"
+    } }).then(function (cred) {
+      saveSetting("lockCredId", toB64(new Uint8Array(cred.rawId)));
+      saveSetting("lockFaceId", true);
+      syncLockUI();
+    }).catch(function (err) {
+      console.warn("passkey creation failed", err);
+      var name = err && err.name;
+      if (name !== "NotAllowedError" && name !== "AbortError") {
+        alert("Face IDを設定できませんでした（" + (name || "エラー") + "）。ホーム画面に追加したGitHub版でお試しください。");
+      }
+      syncLockUI();
+    });
+  }
+
+  function syncLockUI() {
+    var on = lockActive();
+    toggleLock.setAttribute("aria-checked", on ? "true" : "false");
+    lockHelp.textContent = on
+      ? "パスコードを忘れた場合も、ロック画面から24時間後に解除できます（PDFは消えません）。"
+      : "オンにすると4桁のパスコードを設定します。";
+    lockWhenField.hidden = !on;
+    lockFaceField.hidden = !on;
+    lockChangeField.hidden = !on;
+    var w = settings.lockWhen || "launch";
+    Object.keys(lockWhenBtns).forEach(function (k) { lockWhenBtns[k].setAttribute("aria-pressed", w === k ? "true" : "false"); });
+    toggleLockFace.setAttribute("aria-checked", faceAvailable() ? "true" : "false");
+  }
+  toggleLock.addEventListener("click", function () {
+    if (!lockActive()) {
+      openLock("setup", function () { saveSetting("lockEnabled", true); syncLockUI(); });
+    } else {
+      openLock("verify", function () {
+        saveSetting("lockEnabled", false);
+        saveSetting("lockHash", "");
+        saveSetting("lockFaceId", false);
+        saveSetting("lockCredId", "");
+        syncLockUI();
+      });
+    }
+  });
+  Object.keys(lockWhenBtns).forEach(function (k) {
+    lockWhenBtns[k].addEventListener("click", function () { saveSetting("lockWhen", k); syncLockUI(); });
+  });
+  toggleLockFace.addEventListener("click", function () {
+    if (faceAvailable()) {
+      saveSetting("lockFaceId", false);
+      saveSetting("lockCredId", "");
+      syncLockUI();
+    } else {
+      enableFaceId();
+    }
+  });
+  lockChangeBtn.addEventListener("click", function () {
+    openLock("verify", function () { openLock("setup", syncLockUI); });
+  });
+  lockForgot.addEventListener("click", function () {
+    if (settings.lockResetAt) { syncResetNote(); return; }
+    if (!confirm("パスコードを忘れた場合は、今から24時間後にこの画面でロックを解除できます（取り込んだPDFは消えません）。\n解除を申請しますか？")) return;
+    saveSetting("lockResetAt", Date.now());
+    syncResetNote();
+  });
+  lockResetGo.addEventListener("click", function () {
+    if (!settings.lockResetAt || Date.now() < settings.lockResetAt + LOCK_RESET_MS) return;
+    saveSetting("lockEnabled", false);
+    saveSetting("lockHash", "");
+    saveSetting("lockFaceId", false);
+    saveSetting("lockCredId", "");
+    saveSetting("lockResetAt", 0);
+    closeLock();
+    syncLockUI();
+    alert("ロックをオフにしました。必要なら設定から新しいパスコードを設定してください。");
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (!lockActive()) return;
+    if (document.hidden) {
+      lockHiddenAt = Date.now();
+      // 戻るたび: lock right away, so the lock screen (not the book) is
+      // what's left on screen behind the app switcher too.
+      if (settings.lockWhen === "always" && lockMode !== "unlock") openLock("unlock");
+      return;
+    }
+    if (settings.lockWhen === "away" && lockMode !== "unlock" && lockHiddenAt && Date.now() - lockHiddenAt >= LOCK_AWAY_MS) openLock("unlock");
+    if (lockMode === "unlock") {
+      syncResetNote();
+      if (faceAvailable()) setTimeout(tryFaceUnlock, 300);
+    }
+  });
+
   Object.keys(resumeBtns).forEach(function (k) {
     resumeBtns[k].addEventListener("click", function () {
       saveSetting("resumeMode", k);
@@ -4683,6 +5104,7 @@
       if (!hasSort) settings.librarySort = settings.shuffleEnabled ? "random" : "added";
       settings.shuffleEnabled = settings.librarySort === "random";
       applySettingsToUI();
+      if (lockActive()) openLock("unlock");
       // Randomize the initial display order too, not just the periodic
       // reshuffle -- otherwise every fresh tab-open would start out sorted
       // by import date until the first shuffle tick fired. Both only apply
