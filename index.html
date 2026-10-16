@@ -107,6 +107,70 @@
     padding: max(20px, env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
   }
 
+  /* Fixed solid strip under the status bar (see .viewer-topbar for why). */
+  .edge-cover {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: max(8px, env(safe-area-inset-top));
+    background: var(--bg);
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  /* Black screen for the iOS app switcher (best effort; see JS). */
+  .privacy-cover {
+    position: fixed; inset: 0;
+    background: #000;
+    z-index: 2147483647;
+    display: none;
+  }
+  .privacy-cover.on { display: block; }
+
+  /* 漫画 / 同人誌 switch on the first screen */
+  .cat-switch {
+    display: flex;
+    background: var(--border);
+    border-radius: 14px;
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: 18px;
+  }
+  .cat-switch button {
+    flex: 1;
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    min-height: 44px;
+    border-radius: 11px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    touch-action: manipulation;
+  }
+  .cat-switch button .n {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.75rem;
+    font-weight: 500;
+    opacity: 0.8;
+  }
+  .cat-switch button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    box-shadow: 0 2px 8px -3px var(--shadow);
+  }
+  .cat-hint { font-size: 0.75rem; color: var(--text-muted); margin: -10px 2px 16px; }
+  .folder-pick-dest { display: flex; align-items: center; gap: 10px; padding: 12px 0 0; }
+  .folder-pick-dest .lbl { font-size: 0.82rem; color: var(--text-muted); flex: none; }
+  .folder-pick-dest .segmented { flex: 1; }
+  .folder-pick-dest .segmented button { flex: 1; min-height: 36px; }
+
   .brand {
     display: flex;
     align-items: baseline;
@@ -799,14 +863,15 @@
     pointer-events: none;
     transition: opacity 0.25s ease;
   }
-  .wall.open { opacity: 1; pointer-events: auto; }
+  .wall { visibility: hidden; transition: opacity 0.25s ease, visibility 0s linear 0.25s; }
+  .wall.open { opacity: 1; pointer-events: auto; visibility: visible; transition: opacity 0.25s ease, visibility 0s; }
   .wall-grid {
     position: absolute; inset: 0;
     display: grid;
     grid-auto-rows: 1fr;
     gap: 3px;
     padding: 3px;
-    padding-top: max(60px, calc(env(safe-area-inset-top) + 46px));
+    padding-top: calc(max(14px, env(safe-area-inset-top)) + 45px);
   }
   .wall-tile {
     position: relative;
@@ -867,14 +932,15 @@
   .wall-fav.active svg path { fill: currentColor; }
   .wall-fav:active::before { transform: scale(0.92); }
 
+  /* Same solid top bar as the viewer (see .viewer-topbar). */
   .wall-topbar {
-    position: absolute;
+    position: fixed;
     top: 0; left: 0; right: 0;
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding: max(14px, env(safe-area-inset-top)) 14px 34px;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+    padding: max(14px, env(safe-area-inset-top)) 14px 8px;
+    background: #08090c;
     z-index: 3;
     pointer-events: none;
   }
@@ -946,7 +1012,8 @@
     pointer-events: none;
     transition: opacity 0.22s ease;
   }
-  .viewer.open { opacity: 1; pointer-events: auto; }
+  .viewer { visibility: hidden; transition: opacity 0.22s ease, visibility 0s linear 0.22s; }
+  .viewer.open { opacity: 1; pointer-events: auto; visibility: visible; transition: opacity 0.22s ease, visibility 0s; }
   .viewer-stage {
     position: absolute; inset: 0;
     display: flex;
@@ -970,7 +1037,7 @@
     display: flex;
     width: 300%;
     height: 100%;
-    padding-top: 34px;
+    padding-top: calc(max(14px, env(safe-area-inset-top)) + 46px);
     touch-action: none;
   }
   .viewer-slot {
@@ -985,14 +1052,19 @@
     max-height: 100%;
     object-fit: contain;
   }
+  /* Solid, fixed, full-width bar touching the top edge. iOS 26/27 home-
+     screen web apps draw a blur ("scroll edge effect") over the top of the
+     screen unless such a bar exists; the old translucent gradient both
+     triggered it and dimmed the top of the page. The page now starts below
+     the bar (see .viewer-track padding-top) instead of underneath it. */
   .viewer-topbar {
-    position: absolute;
+    position: fixed;
     top: 0; left: 0; right: 0;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: max(14px, env(safe-area-inset-top)) 14px 30px;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+    padding: max(14px, env(safe-area-inset-top)) 14px 10px;
+    background: #08090c;
     z-index: 3;
   }
   .viewer-close {
@@ -1231,12 +1303,20 @@
 </head>
 <body>
 
+<div class="edge-cover" aria-hidden="true"></div>
+<div class="privacy-cover" id="privacy-cover" aria-hidden="true"></div>
 <div class="app" id="app">
 
   <div class="brand">
     <h1>表紙めくり</h1>
     <span class="count" id="header-count"></span>
   </div>
+
+  <div class="cat-switch" id="cat-switch" role="group" aria-label="表示する分類">
+    <button type="button" id="cat-manga" aria-pressed="false">漫画 <span class="n" id="cat-manga-n">0</span></button>
+    <button type="button" id="cat-doujin" aria-pressed="true">同人誌 <span class="n" id="cat-doujin-n">0</span></button>
+  </div>
+  <div class="cat-hint" id="cat-hint">新しく取り込むPDFは「同人誌」に入ります</div>
 
   <div id="view-empty" class="empty" hidden>
     <div class="glyph">
@@ -1279,7 +1359,7 @@
     <div class="select-bar" id="select-bar" hidden>
       <div class="select-bar-row">
         <div>
-          <div class="select-bar-title">削除するPDFを選んでください</div>
+          <div class="select-bar-title">削除・移動するPDFを選んでください</div>
           <div class="select-bar-count" id="select-count">0冊を選択中</div>
         </div>
         <button class="link-btn" id="select-cancel">キャンセル</button>
@@ -1287,6 +1367,9 @@
       <div class="select-bar-row">
         <button class="btn btn-danger-ghost" id="select-delete-all">お気に入り以外をすべて削除</button>
         <button class="btn btn-danger" id="select-delete" disabled>選択した0冊を削除</button>
+      </div>
+      <div class="select-bar-row">
+        <button class="btn btn-ghost" id="select-move" disabled style="flex:1">選択した0冊を漫画へ移動</button>
       </div>
     </div>
 
@@ -1336,6 +1419,13 @@
     </div>
   </div>
   <div class="folder-pick-list" id="folder-pick-list"></div>
+  <div class="folder-pick-dest">
+    <span class="lbl">取り込み先</span>
+    <div class="segmented" role="group" aria-label="取り込み先">
+      <button type="button" id="folder-pick-dest-manga" aria-pressed="false">漫画</button>
+      <button type="button" id="folder-pick-dest-doujin" aria-pressed="true">同人誌</button>
+    </div>
+  </div>
   <div class="folder-pick-summary"><span id="folder-pick-summary"></span></div>
   <div class="folder-pick-actions">
     <button type="button" class="btn btn-ghost" id="folder-pick-cancel">キャンセル</button>
@@ -1375,6 +1465,12 @@
     <div class="segmented" id="direction-toggle" role="group" aria-label="ページを読む方向">
       <button type="button" id="direction-ltr" aria-pressed="true">左開き（一般的な本）</button>
       <button type="button" id="direction-rtl" aria-pressed="false">右開き（マンガ式）</button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">アプリ切り替え画面で黒く隠す</span>
+      <button class="switch" id="toggle-privacy" role="switch" aria-checked="true"></button>
     </div>
   </div>
   <div class="field">
@@ -1686,7 +1782,7 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -1752,6 +1848,16 @@
   var selectCancel = $("select-cancel");
   var selectDeleteAll = $("select-delete-all");
   var selectDelete = $("select-delete");
+  var selectMove = $("select-move");
+  var catMangaBtn = $("cat-manga");
+  var catDoujinBtn = $("cat-doujin");
+  var catMangaN = $("cat-manga-n");
+  var catDoujinN = $("cat-doujin-n");
+  var catHint = $("cat-hint");
+  var folderPickDestManga = $("folder-pick-dest-manga");
+  var folderPickDestDoujin = $("folder-pick-dest-doujin");
+  var togglePrivacy = $("toggle-privacy");
+  var privacyCover = $("privacy-cover");
   var tilesRange = $("tiles-range");
   var tilesValue = $("tiles-value");
   var toggleCaption = $("toggle-caption");
@@ -1781,6 +1887,15 @@
   // tiles. Tapping a group tile drills into currentFolderView, showing just
   // that folder's PDFs as a flat list with a back link above the grid.
   var currentFolderView = null; // folder name string, or null = top level
+
+  // 漫画 / 同人誌: every book belongs to one category ("manga" / "doujin";
+  // books from before categories existed count as 同人誌). The switch on the
+  // first screen picks which one is shown -- library, random display,
+  // selection, bulk delete -- and is also where new imports go.
+  var CAT_LABEL = { manga: "漫画", doujin: "同人誌" };
+  function catOf(c) { return c.category === "manga" ? "manga" : "doujin"; }
+  function curCat() { return settings.category === "manga" ? "manga" : "doujin"; }
+  function catCovers() { var k = curCat(); return covers.filter(function (c) { return catOf(c) === k; }); }
 
   // "選択して削除": instead of a delete button on every cover, the trash
   // button switches the library into a selection mode where tapping a card
@@ -1903,6 +2018,29 @@
     parent.appendChild(addTile);
   }
 
+  function renderEmptyCatMessage(parent) {
+    var empty = document.createElement("p");
+    empty.className = "fav-empty";
+    empty.textContent = "「" + CAT_LABEL[curCat()] + "」にはまだPDFがありません。＋から取り込むと、ここに入ります。";
+    parent.appendChild(empty);
+  }
+  function renderCatSwitch() {
+    var k = curCat(), nM = 0, nD = 0;
+    covers.forEach(function (c) { if (catOf(c) === "manga") nM++; else nD++; });
+    catMangaBtn.setAttribute("aria-pressed", k === "manga" ? "true" : "false");
+    catDoujinBtn.setAttribute("aria-pressed", k === "doujin" ? "true" : "false");
+    catMangaN.textContent = nM;
+    catDoujinN.textContent = nD;
+    catHint.textContent = "新しく取り込むPDFは「" + CAT_LABEL[k] + "」に入ります";
+  }
+  function setCategory(k) {
+    if (curCat() === k) return;
+    saveSetting("category", k);
+    currentFolderView = null;
+    exitSelectMode(false);
+    renderLibrary();
+  }
+
   function renderEmptyFavMessage(parent) {
     var empty = document.createElement("p");
     empty.className = "fav-empty";
@@ -1931,16 +2069,18 @@
 
   function renderLibrary() {
     var has = covers.length > 0;
+    var list = catCovers();
     viewEmpty.hidden = has;
     viewLibrary.hidden = !has;
-    headerCount.textContent = has ? covers.length + "冊" : "";
-    btnStart.disabled = covers.length === 0;
-    btnClear.disabled = covers.length === 0;
-    libraryToggleLabel.textContent = "取り込み済みのPDFを見る（" + covers.length + "冊）";
+    headerCount.textContent = has ? list.length + "冊" : "";
+    btnStart.disabled = list.length === 0;
+    btnClear.disabled = list.length === 0;
+    libraryToggleLabel.textContent = "取り込み済みのPDFを見る（" + list.length + "冊）";
+    renderCatSwitch();
 
     var folderMode = settings.libraryViewMode === "folder";
 
-    var visible = orderedCovers(favFilterActive ? covers.filter(function (c) { return !!c.favorite; }) : covers);
+    var visible = orderedCovers(favFilterActive ? list.filter(function (c) { return !!c.favorite; }) : list);
 
     stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
 
@@ -1952,7 +2092,7 @@
       // --- Drilled into one folder: every PDF in it ---
       // Deliberately ignores the favourites filter: opening a folder from
       // the favourites view is how you get to the rest of that series.
-      var folderCovers = covers.filter(function (c) { return c.folder === currentFolderView; });
+      var folderCovers = list.filter(function (c) { return c.folder === currentFolderView; });
       // Random order is for browsing the top level; once you've opened a
       // folder you want its contents in a predictable order -- by file name,
       // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
@@ -1969,7 +2109,8 @@
     } else if (!folderMode) {
       // --- Flat mode: every PDF as one grid, ignoring folder grouping ---
       folderBreadcrumb.hidden = true;
-      if (favFilterActive && visible.length === 0) renderEmptyFavMessage(frag);
+      if (list.length === 0) renderEmptyCatMessage(frag);
+      else if (favFilterActive && visible.length === 0) renderEmptyFavMessage(frag);
       visible.forEach(function (c) { frag.appendChild(buildCard(c)); });
       appendAddTile(frag);
     } else {
@@ -1979,7 +2120,8 @@
       // Folder tiles follow the same rule as files: alphabetical in name
       // mode; otherwise first-seen order in the (shuffled / by-date) list.
       if (settings.librarySort === "name") grouped.order.sort(byName);
-      if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
+      if (list.length === 0) renderEmptyCatMessage(frag);
+      else if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
         renderEmptyFavMessage(frag);
       }
       grouped.order.forEach(function (folderName) {
@@ -2000,7 +2142,7 @@
   // Selection mode (選択して削除)
   // ---------------------------------------------------------------
   function enterSelectMode() {
-    if (covers.length === 0) return;
+    if (catCovers().length === 0) return;
     selectMode = true;
     selectedIds.clear();
     selectBar.hidden = false;
@@ -2028,8 +2170,21 @@
     selectCount.textContent = n + "冊を選択中";
     selectDelete.textContent = "選択した" + n + "冊を削除";
     selectDelete.disabled = n === 0;
-    var deletable = covers.filter(function (c) { return !c.favorite; }).length;
+    var deletable = catCovers().filter(function (c) { return !c.favorite; }).length;
     selectDeleteAll.disabled = deletable === 0;
+    var other = curCat() === "manga" ? "doujin" : "manga";
+    selectMove.textContent = "選択した" + n + "冊を" + CAT_LABEL[other] + "へ移動";
+    selectMove.disabled = n === 0;
+  }
+  function moveCovers(ids, cat) {
+    var idSet = new Set(ids);
+    var moved = covers.filter(function (c) { return idSet.has(c.id); });
+    moved.forEach(function (c) { c.category = cat; idbPut("covers", c); });
+    if (currentFolderView !== null && !catCovers().some(function (c) { return c.folder === currentFolderView; })) {
+      currentFolderView = null;
+    }
+    exitSelectMode(false);
+    renderLibrary();
   }
   function removeCovers(ids) {
     if (ids.length === 0) return;
@@ -2276,7 +2431,8 @@
     });
   }
 
-  function handleFiles(fileList) {
+  function handleFiles(fileList, dest) {
+    dest = dest === "manga" || dest === "doujin" ? dest : curCat();
     var files = Array.prototype.slice.call(fileList).filter(function (f) {
       return f.type === "application/pdf" || /\.pdf$/i.test(f.name);
     });
@@ -2363,6 +2519,7 @@
     var queuedKeys = {};
     importQueue.forEach(function (f) { queuedKeys[fileKey(f)] = true; });
     toAdd = toAdd.filter(function (f) { return !queuedKeys[fileKey(f)]; });
+    toAdd.forEach(function (f) { f._cat = dest; });
     enqueueImport(toAdd);
   }
 
@@ -2443,7 +2600,7 @@
     materialize(file)
       .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
       .then(function (dataUrl) {
-        var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now(), folder: folderFromFile(file) };
+        var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now(), folder: folderFromFile(file), category: file._cat || curCat() };
         return idbPut("covers", record).then(function (newId) {
           record.id = newId;
           sessionPdfCache.set(newId, file);
@@ -2495,6 +2652,7 @@
     order.sort(byName);
     folderPickGroups = order.map(function (g) { return { name: g, files: groups[g], checked: false }; }); // start with nothing ticked
     renderFolderPick();
+    setFolderPickDest(curCat());
     folderSheetBackdrop.classList.add("open");
     folderSheet.classList.add("open");
   }
@@ -2548,12 +2706,18 @@
     folderPickGroups.forEach(function (g) { g.checked = !all; });
     renderFolderPick();
   }
+  var folderPickDest = "doujin";
+  function setFolderPickDest(k) {
+    folderPickDest = k;
+    folderPickDestManga.setAttribute("aria-pressed", k === "manga" ? "true" : "false");
+    folderPickDestDoujin.setAttribute("aria-pressed", k === "doujin" ? "true" : "false");
+  }
   function importPickedFolders() {
     if (folderPickImport.disabled) return;
     var files = [];
     folderPickGroups.forEach(function (g) { if (g.checked) files = files.concat(g.files); });
     closeFolderPick();
-    handleFiles(files);
+    handleFiles(files, folderPickDest);
   }
 
   // One tap dispatcher for the whole picker. Rather than trusting which
@@ -2575,6 +2739,8 @@
     if (!fromPointer) {
       // Keyboard / programmatic activation: the target is reliable here.
       var t = ev.target;
+      if (t.closest("#folder-pick-dest-manga")) return setFolderPickDest("manga");
+      if (t.closest("#folder-pick-dest-doujin")) return setFolderPickDest("doujin");
       if (t.closest("#folder-pick-toggle-all")) return toggleAllFolders();
       if (t.closest("#folder-pick-cancel")) return closeFolderPick();
       if (t.closest("#folder-pick-import")) return importPickedFolders();
@@ -2582,6 +2748,8 @@
       if (r) toggleFolderRow(r);
       return;
     }
+    if (inRect(folderPickDestManga, x, y)) return setFolderPickDest("manga");
+    if (inRect(folderPickDestDoujin, x, y)) return setFolderPickDest("doujin");
     if (inRect(folderPickToggleAll, x, y)) return toggleAllFolders();
     if (inRect(folderPickCancel, x, y)) return closeFolderPick();
     if (inRect(folderPickImport, x, y)) return importPickedFolders();
@@ -2683,6 +2851,7 @@
     Object.keys(resumeBtns).forEach(function (k) {
       resumeBtns[k].setAttribute("aria-pressed", (settings.resumeMode || "ask") === k ? "true" : "false");
     });
+    togglePrivacy.setAttribute("aria-checked", settings.privacyCover !== false ? "true" : "false");
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
@@ -2818,7 +2987,7 @@
   // Draws a fresh random set into the tiles. Used both when the wall opens
   // and every time "ランダムに選び直す" is tapped.
   function dealWall() {
-    wallPool = shuffle(covers);
+    wallPool = shuffle(catCovers());
     buildWallGrid();
     wallTiles.forEach(function (tile) {
       var record = pickForTile(currentlyShownIds());
@@ -2827,7 +2996,7 @@
   }
 
   function startWall() {
-    if (covers.length === 0) return;
+    if (catCovers().length === 0) return;
     exitSelectMode();
     dealWall();
     wall.classList.add("open");
@@ -2842,7 +3011,7 @@
   }
 
   wallReshuffleBtn.addEventListener("click", function () {
-    if (covers.length === 0) return;
+    if (catCovers().length === 0) return;
     dealWall();
   });
   wallCloseBtn.addEventListener("click", stopWall);
@@ -3570,6 +3739,7 @@
     closeViewer();
     if (wall.classList.contains("open")) stopWall();
     if (selectMode) exitSelectMode(false);
+    if (viewerRecord && catOf(viewerRecord) !== curCat()) saveSetting("category", catOf(viewerRecord));
     currentFolderView = folder;
     if (!libraryPanel.classList.contains("open")) {
       libraryPanel.classList.add("open");
@@ -3633,19 +3803,28 @@
   // "すべて削除" never touches favorites -- they're the ones you've decided
   // to keep, so a bulk clear leaves them (and only them) in the library.
   selectDeleteAll.addEventListener("click", function () {
-    var targets = covers.filter(function (c) { return !c.favorite; }).map(function (c) { return c.id; });
-    var kept = covers.length - targets.length;
+    var inCat = catCovers();
+    var targets = inCat.filter(function (c) { return !c.favorite; }).map(function (c) { return c.id; });
+    var kept = inCat.length - targets.length;
     if (targets.length === 0) {
-      alert("削除できるPDFがありません（取り込み済みのPDFはすべてお気に入りです）。");
+      alert("削除できるPDFがありません（「" + CAT_LABEL[curCat()] + "」のPDFはすべてお気に入りです）。");
       return;
     }
-    var msg = "お気に入り以外のPDF（" + targets.length + "冊）をすべて削除します。";
+    var msg = "「" + CAT_LABEL[curCat()] + "」のお気に入り以外のPDF（" + targets.length + "冊）をすべて削除します。";
     if (kept > 0) msg += "\nお気に入りの" + kept + "冊は残ります。";
     msg += "\nよろしいですか？";
     if (!confirm(msg)) return;
     if (!confirm("本当に削除してよろしいですか？この操作は取り消せません。")) return;
     removeCovers(targets);
   });
+  selectMove.addEventListener("click", function () {
+    var ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    var other = curCat() === "manga" ? "doujin" : "manga";
+    moveCovers(ids, other);
+  });
+  catMangaBtn.addEventListener("click", function () { setCategory("manga"); });
+  catDoujinBtn.addEventListener("click", function () { setCategory("doujin"); });
   btnStart.addEventListener("click", startWall);
   btnSettings.addEventListener("click", openSheet);
   sheetBackdrop.addEventListener("click", closeSheet);
@@ -3757,6 +3936,34 @@
     if (sliderOpen) setSliderVisual(viewerPageNum);
   }
   directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
+  togglePrivacy.addEventListener("click", function () {
+    var v = togglePrivacy.getAttribute("aria-checked") !== "true";
+    togglePrivacy.setAttribute("aria-checked", v ? "true" : "false");
+    saveSetting("privacyCover", v);
+  });
+
+  // Black screen for the iOS app switcher. iOS shows a snapshot of the app
+  // there, taken as the app leaves the foreground; a web page can't hook
+  // that moment directly, so the cover goes up on every "losing focus"
+  // signal the page does get (blur / hidden / pagehide) and comes down as
+  // soon as the app is back in front. Best effort: whether the snapshot is
+  // taken before or after the cover paints is up to iOS.
+  // Only for the installed / top-level app: inside an iframe (the Claude
+  // Artifact page) "blur" just means the user clicked outside the frame.
+  var isTopLevel = (function () { try { return window.top === window; } catch (e) { return false; } })();
+  function showPrivacyCover() { if (isTopLevel && settings.privacyCover !== false) privacyCover.classList.add("on"); }
+  function hidePrivacyCover() { privacyCover.classList.remove("on"); }
+  window.addEventListener("blur", showPrivacyCover);
+  window.addEventListener("pagehide", showPrivacyCover);
+  window.addEventListener("focus", hidePrivacyCover);
+  window.addEventListener("pageshow", hidePrivacyCover);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) showPrivacyCover(); else if (document.hasFocus()) hidePrivacyCover();
+  });
+  // A tap always means we're in front again (covers the case where focus
+  // came back without a focus event).
+  privacyCover.addEventListener("pointerdown", hidePrivacyCover);
+
   Object.keys(resumeBtns).forEach(function (k) {
     resumeBtns[k].addEventListener("click", function () {
       saveSetting("resumeMode", k);
