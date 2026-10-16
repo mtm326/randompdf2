@@ -824,6 +824,28 @@
      inside the sheet's own scroller under a sticky header, and iOS mis-
      mapped taps after scrolling (a row selecting its neighbour, or a tap
      on a row hitting the header's "すべて選択"). */
+  /* Settings sheet: same structure as the folder sheet -- a fixed,
+     non-scrolling header and ONE scrolling body. The old layout (the whole
+     sheet scrolling under a sticky header) is the combination that made
+     iOS WebKit register taps on a different control than the one under the
+     finger after scrolling. */
+  #sheet {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+  #sheet .sheet-head { position: static; flex: none; margin-bottom: 0; }
+  .sheet-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    margin: 0 -22px;
+    padding: 0 22px calc(26px + env(safe-area-inset-bottom));
+  }
+  html.sheet-open, html.sheet-open body { overflow: hidden; }
   #folder-sheet {
     display: flex;
     flex-direction: column;
@@ -1673,6 +1695,7 @@
       </button>
     </div>
   </div>
+  <div class="sheet-body" id="sheet-body">
   <div class="field">
     <div class="field-row">
       <span class="field-label">同時に表示する枚数</span>
@@ -1802,6 +1825,7 @@
       <button type="button" class="link-btn" id="storage-refresh">再計測</button>
     </div>
     <div class="storage-info" id="storage-info">計測中…</div>
+  </div>
   </div>
 </div>
 
@@ -3204,12 +3228,44 @@
   }, true);
   folderSheetBackdrop.addEventListener("click", closeFolderPick);
 
+  // Settings sheet taps go through the same kind of check: a real tap is
+  // delivered to the control whose on-screen rectangle actually contains
+  // the finger (not whatever element iOS hit-tested), taps that only stop
+  // a scroll are dropped, and a tap between controls does nothing.
+  var sheetBody = $("sheet-body");
+  var sheetLastScroll = 0;
+  sheetBody.addEventListener("scroll", function () { sheetLastScroll = Date.now(); }, { passive: true });
+  var SHEET_CONTROLS = "button, input, .switch";
+  $("sheet").addEventListener("click", function (ev) {
+    var x = ev.clientX, y = ev.clientY;
+    if (!ev.isTrusted || (x === 0 && y === 0)) return; // keyboard / programmatic: trust the target
+    var inBody = inRect(sheetBody, x, y);
+    if (inBody && Date.now() - sheetLastScroll < 250) { ev.preventDefault(); ev.stopPropagation(); return; }
+    var scope = inBody ? sheetBody : $("sheet-head");
+    var hit = null;
+    var controls = scope.querySelectorAll(SHEET_CONTROLS);
+    for (var i = 0; i < controls.length; i++) {
+      var c = controls[i];
+      if (c.closest("[hidden]") || c.disabled) continue;
+      if (inRect(c, x, y)) { hit = c; break; }
+    }
+    var meant = ev.target.closest ? ev.target.closest(SHEET_CONTROLS) : null;
+    if (hit && hit === meant) return; // iOS got it right -- let it through
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (hit && hit.type !== "range") hit.click();
+  }, true);
+  // Keep the page behind the sheet from scrolling (a second scroll layer
+  // is part of what confuses iOS hit-testing).
+  sheetBackdrop.addEventListener("touchmove", function (ev) { ev.preventDefault(); }, { passive: false });
+
   // ---------------------------------------------------------------
   // Settings sheet
   // ---------------------------------------------------------------
   function openSheet() {
     sheetBackdrop.classList.add("open");
     sheet.classList.add("open");
+    document.documentElement.classList.add("sheet-open");
     measureStorage();
   }
 
@@ -3280,6 +3336,7 @@
   function closeSheet() {
     sheetBackdrop.classList.remove("open");
     sheet.classList.remove("open");
+    document.documentElement.classList.remove("sheet-open");
   }
 
   function applySettingsToUI() {
@@ -4719,7 +4776,17 @@
   });
   // A tap always means we're in front again (covers the case where focus
   // came back without a focus event).
-  privacyCover.addEventListener("pointerdown", hidePrivacyCover);
+  // The tap that removes the cover must not also land on whatever is
+  // underneath it (that showed up as taps on controls nobody touched).
+  var coverDismissedAt = 0;
+  privacyCover.addEventListener("pointerdown", function (ev) {
+    ev.preventDefault();
+    coverDismissedAt = Date.now();
+    hidePrivacyCover();
+  });
+  document.addEventListener("click", function (ev) {
+    if (Date.now() - coverDismissedAt < 600) { ev.preventDefault(); ev.stopPropagation(); }
+  }, true);
 
   // Experimental: iOS takes the app-switcher snapshot as the app goes to
   // the background, and by then blur / visibilitychange are too late for
@@ -4728,7 +4795,7 @@
   // cancels (touchcancel) once its own gesture takes over -- while the app
   // is still in front. Covering the screen right there gives the cover a
   // chance to be painted before the snapshot is taken.
-  var EDGE_PX = 34;
+  var EDGE_PX = 20; // the home-indicator strip only, below any control
   var edgeTouch = false, edgeStartY = 0, edgeCoverByMove = false;
   document.addEventListener("touchstart", function (ev) {
     var t = ev.touches[0];
@@ -4737,9 +4804,10 @@
     edgeCoverByMove = false;
   }, { passive: true, capture: true });
   document.addEventListener("touchmove", function (ev) {
-    if (!edgeTouch || edgeCoverByMove) return;
+    // Moving well up the screen means the page is scrolling, not the
+    // system gesture: a later cancel then isn't the app switcher.
     var t = ev.touches[0];
-    if (t && edgeStartY - t.clientY > 24) { edgeCoverByMove = true; showPrivacyCover(); }
+    if (edgeTouch && t && edgeStartY - t.clientY > 40) edgeTouch = false;
   }, { passive: true, capture: true });
   document.addEventListener("touchcancel", function () {
     if (edgeTouch) {
