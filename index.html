@@ -1298,6 +1298,138 @@
     border-radius: 10px;
   }
 
+  /* ---------- search + read-state filter (library) ---------- */
+  .lib-search { display: flex; flex-direction: column; gap: 10px; }
+  .lib-search-row { position: relative; display: flex; align-items: center; }
+  .lib-search-row .ico { position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-muted); pointer-events: none; }
+  .lib-search input {
+    width: 100%;
+    font-size: 16px; /* 16px or more keeps iOS from zooming in on focus */
+    padding: 11px 42px 11px 36px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+  }
+  .lib-search input:focus { border-color: var(--accent); }
+  .lib-search input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+  .lib-search-clear {
+    position: absolute; right: 2px;
+    width: 40px; height: 40px;
+    border: none; background: transparent;
+    color: var(--text-muted);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lib-search-clear svg { width: 12px; height: 12px; }
+  .lib-search .segmented button { flex: 1; padding: 8px 4px; }
+  .lib-search-note { font-size: 0.75rem; color: var(--text-muted); }
+
+  /* 読書状況: a pill (読了 / 読みかけ) and a thin progress bar on each cover. */
+  .card .rstat {
+    position: absolute;
+    top: 6px; left: 6px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: #fff;
+    background: rgba(20,20,24,0.66);
+    pointer-events: none;
+  }
+  .card .rstat.done { background: #2f9e6a; }
+  .grid.selecting .card .rstat { display: none; }
+  .card .prog {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.28);
+    pointer-events: none;
+  }
+  .card .prog > i { display: block; height: 100%; background: var(--accent); }
+
+  .viewer-fav[disabled] { opacity: 0.35; pointer-events: none; }
+
+  /* ---------- page list (ページ一覧) ---------- */
+  .pagelist {
+    position: fixed; inset: 0;
+    z-index: 6;
+    background: #08090c;
+    display: none;
+  }
+  .pagelist.open { display: block; }
+  .pagelist-head {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: max(14px, env(safe-area-inset-top)) 14px 10px;
+    background: #08090c;
+  }
+  .pagelist-title { flex: 1; color: #fff; font-size: 0.9rem; font-weight: 600; }
+  .pagelist-scroll {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: calc(max(14px, env(safe-area-inset-top)) + 56px) 14px max(24px, env(safe-area-inset-bottom));
+    /* keep scrollIntoView targets clear of the fixed header */
+    scroll-padding-top: calc(max(14px, env(safe-area-inset-top)) + 64px);
+  }
+  .pagelist-opts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .pagelist-opt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: rgba(255,255,255,0.82);
+    font-size: 0.78rem;
+  }
+  .pagelist .segmented { background: rgba(255,255,255,0.12); flex: none; }
+  .pagelist .segmented button { color: rgba(255,255,255,0.72); padding: 8px 10px; font-size: 0.75rem; }
+  .pagelist .segmented button[aria-pressed="true"] { background: #fff; color: #111; }
+  .pagelist .switch { background: rgba(255,255,255,0.22); }
+  .pagelist .switch[aria-checked="true"] { background: var(--accent); }
+  .pagelist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 14px 10px;
+  }
+  .pagelist-grid.rtl { direction: rtl; }
+  .pl-cell {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    color: rgba(255,255,255,0.7);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem;
+  }
+  .pl-cell .pl-img {
+    width: 100%;
+    aspect-ratio: 3 / 4.2;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid transparent;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .pl-cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .pl-cell.cur .pl-img { border-color: var(--accent); }
+  .pl-cell.cur { color: #fff; font-weight: 700; }
+
   #file-input, #file-input-single, #reselect-input, #reselect-folder-input { display: none; }
 </style>
 </head>
@@ -1359,7 +1491,7 @@
     <div class="select-bar" id="select-bar" hidden>
       <div class="select-bar-row">
         <div>
-          <div class="select-bar-title">削除・移動するPDFを選んでください</div>
+          <div class="select-bar-title">操作するPDFを選んでください</div>
           <div class="select-bar-count" id="select-count">0冊を選択中</div>
         </div>
         <button class="link-btn" id="select-cancel">キャンセル</button>
@@ -1370,6 +1502,10 @@
       </div>
       <div class="select-bar-row">
         <button class="btn btn-ghost" id="select-move" disabled style="flex:1">選択した0冊を漫画へ移動</button>
+      </div>
+      <div class="select-bar-row">
+        <button class="btn btn-ghost" id="select-mark-done" disabled>読了にする</button>
+        <button class="btn btn-ghost" id="select-mark-unread" disabled>未読に戻す</button>
       </div>
     </div>
 
@@ -1386,6 +1522,20 @@
     </button>
 
     <div class="library-panel" id="library-panel">
+      <div class="lib-search" id="lib-search">
+        <div class="lib-search-row">
+          <svg class="ico" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6"/><path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <input type="search" id="lib-search-input" placeholder="題名・フォルダ名で検索" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="題名・フォルダ名で検索">
+          <button type="button" class="lib-search-clear" id="lib-search-clear" aria-label="検索語を消す" hidden><svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="segmented" id="read-filter" role="group" aria-label="読書状況で絞り込む">
+          <button type="button" data-v="all" aria-pressed="true">すべて</button>
+          <button type="button" data-v="unread" aria-pressed="false">未読</button>
+          <button type="button" data-v="reading" aria-pressed="false">読みかけ</button>
+          <button type="button" data-v="done" aria-pressed="false">読了</button>
+        </div>
+        <div class="lib-search-note" id="lib-search-note" hidden></div>
+      </div>
       <div class="folder-breadcrumb" id="folder-breadcrumb" hidden>
         <button class="link-btn" id="folder-back-btn">← 一覧に戻る</button>
         <span class="folder-breadcrumb-label" id="folder-breadcrumb-label"></span>
@@ -1465,6 +1615,22 @@
     <div class="segmented" id="direction-toggle" role="group" aria-label="ページを読む方向">
       <button type="button" id="direction-ltr" aria-pressed="true">左開き（一般的な本）</button>
       <button type="button" id="direction-rtl" aria-pressed="false">右開き（マンガ式）</button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">見開き表示</span>
+    </div>
+    <div class="segmented" id="spread-toggle" role="group" aria-label="見開き表示">
+      <button type="button" id="spread-auto" aria-pressed="true">横向きのとき</button>
+      <button type="button" id="spread-on" aria-pressed="false">常に</button>
+      <button type="button" id="spread-off" aria-pressed="false">しない</button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">見開きで表紙（1ページ目）を単独にする</span>
+      <button class="switch" id="toggle-cover-alone" role="switch" aria-checked="true"></button>
     </div>
   </div>
   <div class="field">
@@ -1573,6 +1739,9 @@
     </button>
     <span class="viewer-title" id="viewer-title"></span>
     <span class="viewer-page" id="viewer-page"></span>
+    <button class="viewer-fav" id="viewer-pages" aria-label="ページ一覧" disabled>
+      <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
+    </button>
     <button class="viewer-fav" id="viewer-open-folder" aria-label="このPDFがあるフォルダを開く" hidden>
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3l1.2 1.6h4.8A1.5 1.5 0 0 1 14 7.1v5.4A1.5 1.5 0 0 1 12.5 14h-9A1.5 1.5 0 0 1 2 12.5v-7z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
     </button>
@@ -1585,6 +1754,34 @@
     <p id="viewer-resume-text">前回は 12 / 120 ページまで読んでいました</p>
     <button class="btn btn-primary" id="viewer-resume-continue">続きから読む</button>
     <button class="btn btn-copyname" id="viewer-resume-start">最初から読む</button>
+  </div>
+  <div class="pagelist" id="pagelist" role="dialog" aria-label="ページ一覧">
+    <div class="pagelist-head">
+      <button class="viewer-close" id="pagelist-close" aria-label="ページ一覧を閉じる"><svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      <span class="pagelist-title">ページ一覧</span>
+      <span class="viewer-page" id="pagelist-count"></span>
+    </div>
+    <div class="pagelist-scroll" id="pagelist-scroll">
+      <div class="pagelist-opts">
+        <div class="pagelist-opt"><span>見開き</span>
+          <div class="segmented" role="group" aria-label="見開き表示">
+            <button type="button" id="pl-spread-auto" aria-pressed="true">横向きのとき</button>
+            <button type="button" id="pl-spread-on" aria-pressed="false">常に</button>
+            <button type="button" id="pl-spread-off" aria-pressed="false">しない</button>
+          </div>
+        </div>
+        <div class="pagelist-opt"><span>読む方向</span>
+          <div class="segmented" role="group" aria-label="ページを読む方向">
+            <button type="button" id="pl-dir-ltr" aria-pressed="true">左開き</button>
+            <button type="button" id="pl-dir-rtl" aria-pressed="false">右開き</button>
+          </div>
+        </div>
+        <div class="pagelist-opt"><span>見開きで表紙を単独にする</span>
+          <button class="switch" id="pl-cover-alone" role="switch" aria-checked="true"></button>
+        </div>
+      </div>
+      <div class="pagelist-grid" id="pagelist-grid"></div>
+    </div>
   </div>
   <div class="viewer-slider" id="viewer-slider">
     <div class="viewer-slider-label" id="viewer-slider-label"></div>
@@ -1782,7 +1979,7 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -1875,6 +2072,14 @@
   var folderBreadcrumb = $("folder-breadcrumb");
   var folderBreadcrumbLabel = $("folder-breadcrumb-label");
   var folderBackBtn = $("folder-back-btn");
+  var libSearchInput = $("lib-search-input");
+  var libSearchClear = $("lib-search-clear");
+  var libSearchNote = $("lib-search-note");
+  var readFilterBtns = Array.prototype.slice.call(document.querySelectorAll("#read-filter button"));
+  var selectMarkDone = $("select-mark-done");
+  var selectMarkUnread = $("select-mark-unread");
+  var spreadBtns = { auto: $("spread-auto"), on: $("spread-on"), off: $("spread-off") };
+  var toggleCoverAlone = $("toggle-cover-alone");
 
   // ---------------------------------------------------------------
   // Rendering: library view
@@ -1921,6 +2126,103 @@
     return list;
   }
 
+  // ---------------------------------------------------------------
+  // Search + 読書状況
+  // ---------------------------------------------------------------
+  // Read state lives on the cover record: lastPage (where you left off),
+  // pageCount (recorded the first time the PDF is opened) and finished
+  // (set once the last page has been shown; cleared by 「未読に戻す」).
+  var searchQuery = "";
+  var readFilter = "all"; // all | unread | reading | done
+  var hayCache = new Map(); // id -> { k, h } normalized "name folder" text
+
+  // Width/case/kana-insensitive text for matching: NFKC folds full-width
+  // ↔ half-width, lowercase folds case, and katakana is mapped onto
+  // hiragana so 「ねこ」 also finds 「ネコ」.
+  function normText(s) {
+    s = String(s || "");
+    try { s = s.normalize("NFKC"); } catch (e) {}
+    s = s.toLowerCase();
+    return s.replace(/[ァ-ヶ]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0x60); });
+  }
+  function searchTerms() { return normText(searchQuery).split(/\s+/).filter(Boolean); }
+  function readState(c) {
+    if (c.finished) return "done";
+    if ((c.lastPage || 0) > 1) return "reading";
+    return "unread";
+  }
+  function filtersActive() { return readFilter !== "all" || searchTerms().length > 0; }
+  function hayOf(c) {
+    var k = c.name + "\u0000" + (c.folder || "");
+    var hit = hayCache.get(c.id);
+    if (hit && hit.k === k) return hit.h;
+    var h = normText(c.name + " " + (c.folder || ""));
+    hayCache.set(c.id, { k: k, h: h });
+    return h;
+  }
+  // Every space-separated word has to appear in the title or folder name.
+  function applyFilters(list) {
+    var terms = searchTerms();
+    if (!terms.length && readFilter === "all") return list;
+    return list.filter(function (c) {
+      if (readFilter !== "all" && readState(c) !== readFilter) return false;
+      if (!terms.length) return true;
+      var h = hayOf(c);
+      return terms.every(function (t) { return h.indexOf(t) !== -1; });
+    });
+  }
+  function clearLibFilters() {
+    searchQuery = "";
+    libSearchInput.value = "";
+    libSearchClear.hidden = true;
+    setReadFilter("all", true);
+  }
+  function setReadFilter(v, silent) {
+    readFilter = v;
+    readFilterBtns.forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.v === v ? "true" : "false"); });
+    if (!silent) renderLibrary();
+  }
+  function renderNoMatchMessage(parent) {
+    var empty = document.createElement("p");
+    empty.className = "fav-empty";
+    empty.textContent = "条件に合うPDFはありません。";
+    parent.appendChild(empty);
+  }
+
+  // Pill + progress bar on a cover card. Safe to call again on an existing
+  // card (after reading) -- it replaces whatever was there.
+  function applyReadState(card, c) {
+    Array.prototype.slice.call(card.querySelectorAll(".rstat, .prog")).forEach(function (el) { el.remove(); });
+    var st = readState(c);
+    if (st === "done") {
+      var pill = document.createElement("div");
+      pill.className = "rstat done";
+      pill.textContent = "読了";
+      card.appendChild(pill);
+    } else if (st === "reading") {
+      if (c.pageCount > 1) {
+        var bar = document.createElement("div");
+        bar.className = "prog";
+        var fill = document.createElement("i");
+        fill.style.width = Math.max(4, Math.min(100, Math.round(c.lastPage / c.pageCount * 100))) + "%";
+        bar.appendChild(fill);
+        card.appendChild(bar);
+      } else {
+        var pill2 = document.createElement("div");
+        pill2.className = "rstat";
+        pill2.textContent = "読みかけ";
+        card.appendChild(pill2);
+      }
+    }
+  }
+  function refreshCardReadState(c) {
+    // Folder tiles show a 読了 count and filters can hide/show cards, so
+    // those cases re-render; otherwise just update the one card in place.
+    if (filtersActive() || (settings.libraryViewMode === "folder" && currentFolderView === null)) { renderLibrary(); return; }
+    var card = grid.querySelector('.card[data-id="' + c.id + '"]');
+    if (card) applyReadState(card, c);
+  }
+
   function buildCard(c) {
     var card = document.createElement("div");
     card.className = "card";
@@ -1939,6 +2241,7 @@
     cap.className = "cap";
     cap.textContent = c.name;
     card.appendChild(cap);
+    applyReadState(card, c);
 
     var fav = document.createElement("button");
     fav.className = "fav" + (c.favorite ? " active" : "");
@@ -1987,7 +2290,8 @@
 
     var cap = document.createElement("div");
     cap.className = "cap";
-    cap.textContent = folderName + "（" + members.length + "冊）";
+    var nDone = members.filter(function (m) { return readState(m) === "done"; }).length;
+    cap.textContent = folderName + "（" + members.length + "冊" + (nDone ? "・読了" + nDone : "") + "）";
     card.appendChild(cap);
 
     card.appendChild(buildCheck());
@@ -2080,7 +2384,11 @@
 
     var folderMode = settings.libraryViewMode === "folder";
 
-    var visible = orderedCovers(favFilterActive ? list.filter(function (c) { return !!c.favorite; }) : list);
+    var filtering = filtersActive();
+    var visible = applyFilters(favFilterActive ? list.filter(function (c) { return !!c.favorite; }) : list);
+    // Search hits read best alphabetically; otherwise the configured order.
+    visible = searchTerms().length ? visible.slice().sort(coverByName) : orderedCovers(visible);
+    var noteCount = visible.length;
 
     stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
 
@@ -2092,7 +2400,9 @@
       // --- Drilled into one folder: every PDF in it ---
       // Deliberately ignores the favourites filter: opening a folder from
       // the favourites view is how you get to the rest of that series.
-      var folderCovers = list.filter(function (c) { return c.folder === currentFolderView; });
+      var folderAll = list.filter(function (c) { return c.folder === currentFolderView; });
+      var folderCovers = applyFilters(folderAll);
+      noteCount = folderCovers.length;
       // Random order is for browsing the top level; once you've opened a
       // folder you want its contents in a predictable order -- by file name,
       // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
@@ -2103,14 +2413,20 @@
         return fa !== fb ? fa - fb : coverByName(a, b);
       });
       folderBreadcrumb.hidden = false;
-      folderBreadcrumbLabel.textContent = currentFolderView + "（" + folderCovers.length + "冊）";
+      folderBreadcrumbLabel.textContent = currentFolderView + (filtering
+        ? "（" + folderCovers.length + " / " + folderAll.length + "冊）"
+        : "（" + folderCovers.length + "冊）");
+      if (filtering && folderCovers.length === 0) renderNoMatchMessage(frag);
       folderCovers.forEach(function (c) { frag.appendChild(buildCard(c)); });
       appendAddTile(frag);
     } else if (!folderMode) {
       // --- Flat mode: every PDF as one grid, ignoring folder grouping ---
       folderBreadcrumb.hidden = true;
       if (list.length === 0) renderEmptyCatMessage(frag);
-      else if (favFilterActive && visible.length === 0) renderEmptyFavMessage(frag);
+      else if (visible.length === 0) {
+        if (filtering) renderNoMatchMessage(frag);
+        else if (favFilterActive) renderEmptyFavMessage(frag);
+      }
       visible.forEach(function (c) { frag.appendChild(buildCard(c)); });
       appendAddTile(frag);
     } else {
@@ -2121,8 +2437,9 @@
       // mode; otherwise first-seen order in the (shuffled / by-date) list.
       if (settings.librarySort === "name") grouped.order.sort(byName);
       if (list.length === 0) renderEmptyCatMessage(frag);
-      else if (favFilterActive && grouped.order.length === 0 && grouped.ungrouped.length === 0) {
-        renderEmptyFavMessage(frag);
+      else if (grouped.order.length === 0 && grouped.ungrouped.length === 0) {
+        if (filtering) renderNoMatchMessage(frag);
+        else if (favFilterActive) renderEmptyFavMessage(frag);
       }
       grouped.order.forEach(function (folderName) {
         frag.appendChild(buildFolderTile(folderName, grouped.groups[folderName]));
@@ -2133,6 +2450,8 @@
 
     grid.innerHTML = "";
     grid.appendChild(frag);
+    libSearchNote.hidden = !filtering || list.length === 0;
+    if (filtering) libSearchNote.textContent = noteCount + "冊が該当";
     grid.classList.toggle("selecting", selectMode);
     if (selectMode) updateSelectBar();
     if (folderMode && currentFolderView === null && settings.folderPreviewRotate) startFolderTileRotation();
@@ -2175,6 +2494,19 @@
     var other = curCat() === "manga" ? "doujin" : "manga";
     selectMove.textContent = "選択した" + n + "冊を" + CAT_LABEL[other] + "へ移動";
     selectMove.disabled = n === 0;
+    selectMarkDone.disabled = n === 0;
+    selectMarkUnread.disabled = n === 0;
+  }
+  function setReadStateFor(ids, done) {
+    var idSet = new Set(ids);
+    covers.forEach(function (c) {
+      if (!idSet.has(c.id)) return;
+      if (done) c.finished = true;
+      else { c.finished = false; delete c.lastPage; }
+      idbPut("covers", c);
+    });
+    exitSelectMode(false);
+    renderLibrary();
   }
   function moveCovers(ids, cat) {
     var idSet = new Set(ids);
@@ -2252,6 +2584,7 @@
     // Shuffling only matters for the top level (folder tiles / all PDFs).
     if (currentFolderView !== null) return;
     if (selectMode) return; // never move cards around while the user is picking
+    if (filtersActive()) return; // keep search / filter results still
     if (covers.length < 2) return;
     covers = shuffle(covers);
     renderLibrary();
@@ -2853,6 +3186,7 @@
     });
     togglePrivacy.setAttribute("aria-checked", settings.privacyCover !== false ? "true" : "false");
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
+    syncViewerOptsUI();
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
     Object.keys(librarySortBtns).forEach(function (k) {
@@ -3061,6 +3395,41 @@
   var viewerPageCount = 1;
   var viewerRenderGen = 0;
   var viewerRecord = null;
+  var viewerPagesBtn = $("viewer-pages");
+
+  // ---------------------------------------------------------------
+  // 見開き (two-page spreads). The viewer always works in "views": a view
+  // is either one page or two facing pages, identified by its first page
+  // number (viewerPageNum). With the cover shown alone the views are
+  // 1 | 2-3 | 4-5 ...; without it 1-2 | 3-4 ... Turning moves a whole view.
+  // In right-to-left reading the lower page sits on the right.
+  // ---------------------------------------------------------------
+  var viewerSpread = false;
+  function spreadOn() {
+    var m = settings.spreadMode || "auto";
+    if (m === "on") return true;
+    if (m === "off") return false;
+    return window.innerWidth > window.innerHeight && window.innerWidth >= 480;
+  }
+  function coverAlone() { return settings.spreadCoverAlone !== false; }
+  function viewStart(p) {
+    if (!viewerSpread) return p;
+    if (coverAlone()) return p <= 1 ? 1 : (p % 2 === 0 ? p : p - 1);
+    return p % 2 === 1 ? p : p - 1;
+  }
+  function viewPages(s) {
+    if (s < 1 || s > viewerPageCount) return [];
+    if (!viewerSpread) return [s];
+    if (coverAlone() && s === 1) return [1];
+    return s + 1 <= viewerPageCount ? [s, s + 1] : [s];
+  }
+  function viewEnd(s) { var v = viewPages(s); return v.length ? v[v.length - 1] : s; }
+  function nextViewStart(s) { return s + Math.max(1, viewPages(s).length); }
+  function prevViewStart(s) { return s <= 1 ? 0 : viewStart(s - 1); }
+  function pageLabelText() {
+    var v = viewPages(viewerPageNum);
+    return (v.length === 2 ? v[0] + "-" + v[1] : viewerPageNum) + " / " + viewerPageCount;
+  }
 
   function openViewer(record) {
     viewerRecord = record;
@@ -3075,6 +3444,8 @@
     viewerReselect.classList.remove("show");
     viewerResume.classList.remove("show");
     viewerOpenFolder.hidden = !record.folder;
+    viewerPagesBtn.disabled = true;
+    teardownPageList();
 
     var cached = sessionPdfCache.get(record.id);
     if (cached) {
@@ -3111,6 +3482,7 @@
     window.pdfjsLib.getDocument({ data: buffer }).promise.then(function (pdf) {
       viewerPdf = pdf;
       viewerPageCount = pdf.numPages;
+      viewerPagesBtn.disabled = false;
       canvasOrder = [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext];
       viewerSlotLeft.appendChild(viewerCanvasPrev);
       viewerSlotMid.appendChild(viewerCanvasCur);
@@ -3160,8 +3532,11 @@
   var pageSaveTimer = null;
   function rememberPage() {
     if (!viewerRecord || !viewerPdf) return;
-    if (viewerRecord.lastPage === viewerPageNum) return;
-    viewerRecord.lastPage = viewerPageNum;
+    var changed = false;
+    if (viewerRecord.lastPage !== viewerPageNum) { viewerRecord.lastPage = viewerPageNum; changed = true; }
+    if (viewerRecord.pageCount !== viewerPageCount) { viewerRecord.pageCount = viewerPageCount; changed = true; }
+    if (!viewerRecord.finished && viewEnd(viewerPageNum) >= viewerPageCount) { viewerRecord.finished = true; changed = true; }
+    if (!changed) return;
     clearTimeout(pageSaveTimer);
     var rec = viewerRecord;
     pageSaveTimer = setTimeout(function () { pageSaveTimer = null; idbPut("covers", rec); }, 1200);
@@ -3324,17 +3699,29 @@
   var canvasOrder = [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext];
   var viewerStageWidth = 0;
 
-  function renderPageIntoCanvas(canvas, pageNum, gen) {
-    if (canvas._renderedPage === pageNum) return Promise.resolve(); // already correct
-    if (!viewerPdf || pageNum < 1 || pageNum > viewerPageCount) {
-      canvas._renderedPage = pageNum;
+  // _renderedPage holds a key for what the canvas shows (pages, layout
+  // direction, slot size) so it's only redrawn when something changed.
+  function slotKey(start, slot) {
+    var w = slot.clientWidth || window.innerWidth;
+    var h = slot.clientHeight || window.innerHeight;
+    var v = viewPages(start);
+    return v.join("-") + (v.length === 2 && isRtl() ? "r" : "") + "@" + w + "x" + h;
+  }
+  function renderPageIntoCanvas(canvas, start, gen) {
+    var pages = viewPages(start);
+    if (!viewerPdf || !pages.length) {
+      canvas._renderedPage = "none";
       canvas.width = 2;
       canvas.height = 2;
       return Promise.resolve();
     }
+    var slot = canvas.parentElement;
+    var key = slotKey(start, slot);
+    if (canvas._renderedPage === key) return Promise.resolve(); // already correct
+    if (pages.length === 2) return renderSpreadIntoCanvas(canvas, pages, key, gen);
+    var pageNum = pages[0];
     return viewerPdf.getPage(pageNum).then(function (page) {
       if (gen !== viewerRenderGen) return;
-      var slot = canvas.parentElement;
       var maxW = slot.clientWidth || window.innerWidth;
       var maxH = slot.clientHeight || window.innerHeight;
       var baseViewport = page.getViewport({ scale: 1 });
@@ -3345,10 +3732,57 @@
       canvas.height = Math.round(viewport.height);
       var ctx = canvas.getContext("2d");
       return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () {
-        canvas._renderedPage = pageNum;
+        canvas._renderedPage = key;
       });
     }).catch(function (err) {
       console.error("ページ描画エラー", pageNum, err);
+    });
+  }
+
+  // Two facing pages drawn side by side at a common height. Each page is
+  // rendered into its own scratch canvas first and then composed, so the
+  // visible canvas never shows a half-drawn spread.
+  function renderSpreadIntoCanvas(canvas, pages, key, gen) {
+    var order = isRtl() ? pages.slice().reverse() : pages;
+    var slot = canvas.parentElement;
+    var maxW = slot.clientWidth || window.innerWidth;
+    var maxH = slot.clientHeight || window.innerHeight;
+    var dpr = window.devicePixelRatio || 1;
+    return Promise.all(order.map(function (p) { return viewerPdf.getPage(p); })).then(function (pgs) {
+      if (gen !== viewerRenderGen) return;
+      var vps = pgs.map(function (pg) { return pg.getViewport({ scale: 1 }); });
+      var ratioSum = vps.reduce(function (a, v) { return a + v.width / v.height; }, 0);
+      var H = Math.min(maxH, maxW / ratioSum);
+      if (!isFinite(H) || H <= 0) H = maxH;
+      var parts = [];
+      var chain = Promise.resolve();
+      pgs.forEach(function (pg, i) {
+        chain = chain.then(function () {
+          if (gen !== viewerRenderGen) return;
+          var vp = pg.getViewport({ scale: H * dpr / vps[i].height });
+          var tmp = document.createElement("canvas");
+          tmp.width = Math.round(vp.width);
+          tmp.height = Math.round(vp.height);
+          return pg.render({ canvasContext: tmp.getContext("2d"), viewport: vp }).promise.then(function () { parts.push(tmp); });
+        });
+      });
+      return chain.then(function () {
+        if (gen !== viewerRenderGen || parts.length !== pgs.length) return;
+        var totalW = parts.reduce(function (a, t) { return a + t.width; }, 0);
+        var outH = Math.max.apply(null, parts.map(function (t) { return t.height; }));
+        canvas.width = totalW;
+        canvas.height = outH;
+        var ctx = canvas.getContext("2d");
+        var x = 0;
+        parts.forEach(function (t) {
+          ctx.drawImage(t, x, Math.round((outH - t.height) / 2));
+          x += t.width;
+          t.width = 0; t.height = 0; // release the scratch bitmap
+        });
+        canvas._renderedPage = key;
+      });
+    }).catch(function (err) {
+      console.error("見開き描画エラー", pages, err);
     });
   }
 
@@ -3360,9 +3794,10 @@
   // the left slot) is how you advance when reading right-to-left.
   function renderAllSlots() {
     var gen = ++viewerRenderGen;
+    var prev = prevViewStart(viewerPageNum), next = nextViewStart(viewerPageNum);
     var targets = isRtl()
-      ? [viewerPageNum + 1, viewerPageNum, viewerPageNum - 1]
-      : [viewerPageNum - 1, viewerPageNum, viewerPageNum + 1];
+      ? [next, viewerPageNum, prev]
+      : [prev, viewerPageNum, next];
     return Promise.all(canvasOrder.map(function (canvas, i) {
       return renderPageIntoCanvas(canvas, targets[i], gen);
     }));
@@ -3372,10 +3807,10 @@
   // has a valid page in it right now (used to gate commits and to decide
   // when to rubber-band instead of following the finger).
   function canRevealLeftSlot() {
-    return isRtl() ? viewerPageNum < viewerPageCount : viewerPageNum > 1;
+    return isRtl() ? nextViewStart(viewerPageNum) <= viewerPageCount : viewerPageNum > 1;
   }
   function canRevealRightSlot() {
-    return isRtl() ? viewerPageNum > 1 : viewerPageNum < viewerPageCount;
+    return isRtl() ? viewerPageNum > 1 : nextViewStart(viewerPageNum) <= viewerPageCount;
   }
 
   function updateViewerStageWidth() {
@@ -3389,10 +3824,13 @@
   // Used for the very first page of a freshly opened PDF, and after a
   // resize — every slot's content is suspect, so (re)render all three.
   function syncViewerTrack(showSpinner) {
+    viewerSpread = spreadOn();
+    viewerPageNum = viewStart(Math.max(1, Math.min(viewerPageCount, viewerPageNum)));
     updateViewerStageWidth();
     viewerTrack.style.transition = "none";
     setTrackTransform(0);
-    viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
+    viewerPageLabel.textContent = pageLabelText();
+    if (pagelist.classList.contains("open")) syncPageListState();
     if (showSpinner) viewerSpinner.classList.add("show");
     renderAllSlots().then(function () {
       if (showSpinner) viewerSpinner.classList.remove("show");
@@ -3433,8 +3871,8 @@
       rotateCanvases(dir);
       var revealedRight = dir === -1;
       var advance = isRtl() ? !revealedRight : revealedRight;
-      viewerPageNum += advance ? 1 : -1;
-      viewerPageLabel.textContent = viewerPageNum + " / " + viewerPageCount;
+      viewerPageNum = advance ? nextViewStart(viewerPageNum) : prevViewStart(viewerPageNum);
+      viewerPageLabel.textContent = pageLabelText();
       rememberPage();
       setTrackTransform(0);
       renderAllSlots(); // only the one newly-exposed lookahead slot actually redraws
@@ -3511,7 +3949,7 @@
 
   function jumpToPage(pageNum) {
     pageNum = Math.max(1, Math.min(viewerPageCount, pageNum));
-    if (pageNum === viewerPageNum) return;
+    if (viewStart(pageNum) === viewerPageNum && viewerSpread === spreadOn()) return;
     viewerPageNum = pageNum;
     syncViewerTrack(false);
     rememberPage();
@@ -3720,7 +4158,151 @@
     handleViewerTap({ clientX: ev.clientX, clientY: ev.clientY });
   });
 
+  // ---------------------------------------------------------------
+  // ページ一覧: a full-screen grid of page thumbnails. Thumbnails are
+  // rendered lazily (only cells on/near screen, one at a time) into a
+  // shared scratch canvas and kept as small JPEG blobs, so even long PDFs
+  // don't hold hundreds of full canvases in memory.
+  // ---------------------------------------------------------------
+  var pagelist = $("pagelist");
+  var pagelistScroll = $("pagelist-scroll");
+  var pagelistGrid = $("pagelist-grid");
+  var pagelistCount = $("pagelist-count");
+  var pagelistClose = $("pagelist-close");
+  var plSpreadBtns = { auto: $("pl-spread-auto"), on: $("pl-spread-on"), off: $("pl-spread-off") };
+  var plDirLtr = $("pl-dir-ltr");
+  var plDirRtl = $("pl-dir-rtl");
+  var plCoverAlone = $("pl-cover-alone");
+  var plBuiltFor = null, plCells = [], plUrls = [], plQueue = [], plNear = new Set();
+  var plBusy = false, plGen = 0, plObserver = null;
+  var plCanvas = document.createElement("canvas");
+
+  function teardownPageList() {
+    plGen++;
+    if (plObserver) plObserver.disconnect();
+    plObserver = null;
+    plUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+    plUrls = []; plCells = []; plQueue = []; plNear.clear();
+    plBuiltFor = null; plBusy = false;
+    pagelistGrid.innerHTML = "";
+    pagelist.classList.remove("open");
+  }
+  function buildPageList() {
+    teardownPageList();
+    plBuiltFor = viewerPdf;
+    var frag = document.createDocumentFragment();
+    for (var p = 1; p <= viewerPageCount; p++) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "pl-cell";
+      b.dataset.page = String(p);
+      var box = document.createElement("span");
+      box.className = "pl-img";
+      var num = document.createElement("span");
+      num.textContent = p;
+      b.appendChild(box);
+      b.appendChild(num);
+      frag.appendChild(b);
+      plCells.push(b);
+      plQueue.push(p);
+    }
+    pagelistGrid.appendChild(frag);
+    if ("IntersectionObserver" in window) {
+      plObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          var p = +en.target.dataset.page;
+          if (en.isIntersecting) plNear.add(p); else plNear.delete(p);
+        });
+        pumpPageList();
+      }, { root: pagelistScroll, rootMargin: "500px 0px" });
+      plCells.forEach(function (c) { plObserver.observe(c); });
+    } else {
+      plCells.forEach(function (c, i) { plNear.add(i + 1); });
+    }
+  }
+  function renderThumb(pdf, p) {
+    return pdf.getPage(p).then(function (page) {
+      var v1 = page.getViewport({ scale: 1 });
+      var scale = 220 / v1.width;
+      if (v1.height * scale > 320) scale = 320 / v1.height;
+      var vp = page.getViewport({ scale: scale });
+      plCanvas.width = Math.round(vp.width);
+      plCanvas.height = Math.round(vp.height);
+      return page.render({ canvasContext: plCanvas.getContext("2d"), viewport: vp }).promise.then(function () {
+        return new Promise(function (resolve) {
+          if (plCanvas.toBlob) {
+            plCanvas.toBlob(function (b) { resolve(b ? URL.createObjectURL(b) : plCanvas.toDataURL("image/jpeg", 0.8)); }, "image/jpeg", 0.8);
+          } else {
+            resolve(plCanvas.toDataURL("image/jpeg", 0.8));
+          }
+        });
+      });
+    });
+  }
+  function pumpPageList() {
+    if (plBusy || !plBuiltFor || !pagelist.classList.contains("open")) return;
+    var idx = -1;
+    for (var i = 0; i < plQueue.length; i++) { if (plNear.has(plQueue[i])) { idx = i; break; } }
+    if (idx === -1) return;
+    var p = plQueue.splice(idx, 1)[0];
+    var cell = plCells[p - 1];
+    var gen = plGen;
+    plBusy = true;
+    renderThumb(plBuiltFor, p).then(function (url) {
+      if (gen !== plGen) { if (url && url.indexOf("blob:") === 0) URL.revokeObjectURL(url); return; }
+      if (url.indexOf("blob:") === 0) plUrls.push(url);
+      var img = document.createElement("img");
+      img.decoding = "async";
+      img.alt = "";
+      img.src = url;
+      cell.firstChild.appendChild(img);
+    }).catch(function (err) {
+      console.error("ページ一覧の描画エラー", p, err);
+    }).then(function () {
+      if (gen !== plGen) return;
+      plBusy = false;
+      pumpPageList();
+    });
+  }
+  function syncPageListState() {
+    pagelistCount.textContent = pageLabelText();
+    var cur = viewPages(viewerPageNum);
+    plCells.forEach(function (c, i) { c.classList.toggle("cur", cur.indexOf(i + 1) !== -1); });
+    pagelistGrid.classList.toggle("rtl", isRtl());
+  }
+  function openPageList() {
+    if (!viewerPdf) return;
+    closeSlider();
+    if (plBuiltFor !== viewerPdf) buildPageList();
+    pagelist.classList.add("open");
+    syncPageListState();
+    var cell = plCells[viewerPageNum - 1];
+    if (cell) { try { cell.scrollIntoView({ block: "nearest" }); } catch (e) {} }
+    pumpPageList();
+  }
+  function closePageList() { pagelist.classList.remove("open"); }
+
+  viewerPagesBtn.addEventListener("click", openPageList);
+  pagelistClose.addEventListener("click", closePageList);
+  pagelistGrid.addEventListener("click", function (ev) {
+    var cell = ev.target.closest ? ev.target.closest(".pl-cell") : null;
+    if (!cell || !viewerPdf) return;
+    var p = +cell.dataset.page;
+    closePageList();
+    // Still on the cover / 続きから prompt: start reading at that page.
+    if (viewerResume.classList.contains("show") || viewerTrack.style.display === "none") startViewerAt(p);
+    else jumpToPage(p);
+  });
+  Object.keys(plSpreadBtns).forEach(function (k) {
+    plSpreadBtns[k].addEventListener("click", function () { setSpreadMode(k); });
+  });
+  plDirLtr.addEventListener("click", function () { setDirection("ltr"); });
+  plDirRtl.addEventListener("click", function () { setDirection("rtl"); });
+  plCoverAlone.addEventListener("click", function () { setCoverAlone(!coverAlone()); });
+
   function closeViewer() {
+    teardownPageList();
+    var closedRecord = viewerRecord;
     flushPageSave();
     viewerResume.classList.remove("show");
     viewer.classList.remove("open");
@@ -3728,6 +4310,7 @@
     viewerPdf = null;
     viewerRenderGen++;
     closeSlider();
+    if (closedRecord) refreshCardReadState(closedRecord);
   }
 
   viewerClose.addEventListener("click", closeViewer);
@@ -3740,6 +4323,7 @@
     if (wall.classList.contains("open")) stopWall();
     if (selectMode) exitSelectMode(false);
     if (viewerRecord && catOf(viewerRecord) !== curCat()) saveSetting("category", catOf(viewerRecord));
+    clearLibFilters();
     currentFolderView = folder;
     if (!libraryPanel.classList.contains("open")) {
       libraryPanel.classList.add("open");
@@ -3764,7 +4348,7 @@
   });
 
   window.addEventListener("resize", function () {
-    if (viewer.classList.contains("open") && viewerPdf) syncViewerTrack(false);
+    if (viewer.classList.contains("open") && viewerPdf && viewerTrack.style.display !== "none") syncViewerTrack(false);
   });
 
   // ---------------------------------------------------------------
@@ -3823,6 +4407,36 @@
     var other = curCat() === "manga" ? "doujin" : "manga";
     moveCovers(ids, other);
   });
+  selectMarkDone.addEventListener("click", function () {
+    var ids = Array.from(selectedIds);
+    if (ids.length) setReadStateFor(ids, true);
+  });
+  selectMarkUnread.addEventListener("click", function () {
+    var ids = Array.from(selectedIds);
+    if (ids.length) setReadStateFor(ids, false);
+  });
+  var searchTimer = null;
+  libSearchInput.addEventListener("input", function () {
+    libSearchClear.hidden = !libSearchInput.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+      searchQuery = libSearchInput.value;
+      renderLibrary();
+    }, 180);
+  });
+  libSearchInput.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); libSearchInput.blur(); }
+  });
+  libSearchClear.addEventListener("click", function () {
+    clearTimeout(searchTimer);
+    libSearchInput.value = "";
+    libSearchClear.hidden = true;
+    searchQuery = "";
+    renderLibrary();
+  });
+  readFilterBtns.forEach(function (b) {
+    b.addEventListener("click", function () { setReadFilter(b.dataset.v); });
+  });
   catMangaBtn.addEventListener("click", function () { setCategory("manga"); });
   catDoujinBtn.addEventListener("click", function () { setCategory("doujin"); });
   btnStart.addEventListener("click", startWall);
@@ -3830,6 +4444,7 @@
   sheetBackdrop.addEventListener("click", closeSheet);
   sheetClose.addEventListener("click", closeSheet);
   document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && pagelist.classList.contains("open")) { closePageList(); return; }
     if (ev.key === "Escape" && sheet.classList.contains("open")) closeSheet();
     if (ev.key === "Escape" && folderSheet.classList.contains("open")) closeFolderPick();
   });
@@ -3931,10 +4546,43 @@
     directionRtlBtn.setAttribute("aria-pressed", dir === "rtl" ? "true" : "false");
     // Slot contents (which page is "prev"/"next") depend on reading
     // direction, so an open viewer needs its slots re-targeted.
-    if (viewer.classList.contains("open") && viewerPdf) syncViewerTrack(false);
+    if (viewer.classList.contains("open") && viewerPdf && viewerTrack.style.display !== "none") syncViewerTrack(false);
     // The page-jump slider's left/right layout also depends on direction.
     if (sliderOpen) setSliderVisual(viewerPageNum);
+    syncViewerOptsUI();
+    if (pagelist.classList.contains("open")) syncPageListState();
   }
+  // Viewer options shown in two places (settings sheet + ページ一覧).
+  function syncViewerOptsUI() {
+    var m = settings.spreadMode || "auto";
+    Object.keys(spreadBtns).forEach(function (k) {
+      spreadBtns[k].setAttribute("aria-pressed", m === k ? "true" : "false");
+      plSpreadBtns[k].setAttribute("aria-pressed", m === k ? "true" : "false");
+    });
+    var ca = coverAlone() ? "true" : "false";
+    toggleCoverAlone.setAttribute("aria-checked", ca);
+    plCoverAlone.setAttribute("aria-checked", ca);
+    plDirLtr.setAttribute("aria-pressed", isRtl() ? "false" : "true");
+    plDirRtl.setAttribute("aria-pressed", isRtl() ? "true" : "false");
+  }
+  function resyncOpenViewer() {
+    if (viewer.classList.contains("open") && viewerPdf && viewerTrack.style.display !== "none") syncViewerTrack(false);
+    if (pagelist.classList.contains("open")) syncPageListState();
+  }
+  function setSpreadMode(m) {
+    saveSetting("spreadMode", m);
+    syncViewerOptsUI();
+    resyncOpenViewer();
+  }
+  function setCoverAlone(v) {
+    saveSetting("spreadCoverAlone", v);
+    syncViewerOptsUI();
+    resyncOpenViewer();
+  }
+  Object.keys(spreadBtns).forEach(function (k) {
+    spreadBtns[k].addEventListener("click", function () { setSpreadMode(k); });
+  });
+  toggleCoverAlone.addEventListener("click", function () { setCoverAlone(!coverAlone()); });
   directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
   togglePrivacy.addEventListener("click", function () {
     var v = togglePrivacy.getAttribute("aria-checked") !== "true";
