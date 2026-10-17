@@ -479,6 +479,50 @@
   .card { order: 1; }
   .folder-card { order: 0; }
   .add-tile { order: 2; }
+  .lib-more { order: 3; grid-column: 1 / -1; height: 1px; }
+  /* no iOS "save image" callout / text selection on a held cover */
+  .card, .card img { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+  /* ---------- long-press menu ---------- */
+  .cardmenu-backdrop {
+    position: fixed; inset: 0;
+    background: var(--scrim);
+    z-index: 44;
+    display: none;
+    touch-action: none;
+  }
+  .cardmenu-backdrop.open { display: block; }
+  .cardmenu {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    max-width: 640px;
+    margin: 0 auto;
+    z-index: 45;
+    display: none;
+    overflow: hidden;
+    touch-action: none;
+    background: var(--bg-elevated);
+    border-radius: 20px 20px 0 0;
+    padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -20px 40px -20px var(--shadow);
+  }
+  .cardmenu.open { display: block; }
+  .cardmenu-head { display: flex; gap: 12px; align-items: center; padding: 0 6px 12px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .cardmenu-head img { width: 44px; height: 62px; object-fit: contain; border-radius: 4px; background: var(--bg-card); flex: none; }
+  .cardmenu-meta { min-width: 0; }
+  .cardmenu-title { font-weight: 600; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .cardmenu-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; }
+  .cardmenu-item {
+    display: block; width: 100%;
+    appearance: none; border: none; background: transparent;
+    color: var(--text);
+    font-family: inherit; font-size: 1rem; text-align: left;
+    padding: 14px 10px;
+    border-radius: 10px;
+  }
+  .cardmenu-item:active { background: var(--border); }
+  .cardmenu-item.danger { color: #e2574c; }
+  .cardmenu-item.cancel { text-align: center; font-weight: 600; margin-top: 8px; background: var(--bg-card); }
 
   /* フォルダ表示: an accent-colored border + a stack-of-cards look (offset
      shadow layers) + a solid accent badge, so a folder tile reads clearly
@@ -878,6 +922,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   .folder-pick-item:last-child { border-bottom: none; }
+  .folder-pick-item.all-imported .folder-pick-name { color: var(--text-muted); }
   .folder-pick-box {
     width: 22px; height: 22px;
     border-radius: 6px;
@@ -1259,6 +1304,9 @@
     line-height: 1.6;
   }
   .viewer-resume .btn { width: 100%; padding: 14px 18px; }
+  .viewer-next-row { display: flex; align-items: center; gap: 12px; color: #fff; font-size: 0.9rem; font-weight: 600; text-align: left; }
+  .viewer-next-row img { width: 46px; height: 64px; object-fit: contain; border-radius: 4px; background: rgba(255,255,255,0.08); flex: none; }
+  .viewer-next-row span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .viewer-reselect p {
     margin: 0;
     color: rgba(255,255,255,0.82);
@@ -1687,6 +1735,19 @@
   </div>
 </div>
 
+<div class="cardmenu-backdrop" id="cardmenu-backdrop"></div>
+<div class="cardmenu" id="cardmenu" role="dialog" aria-modal="true" aria-labelledby="cardmenu-title">
+  <div class="cardmenu-head">
+    <img id="cardmenu-thumb" alt="">
+    <div class="cardmenu-meta"><div class="cardmenu-title" id="cardmenu-title"></div><div class="cardmenu-sub" id="cardmenu-sub"></div></div>
+  </div>
+  <button type="button" class="cardmenu-item" data-act="folder" id="cardmenu-folder">フォルダを開く</button>
+  <button type="button" class="cardmenu-item" data-act="fav" id="cardmenu-fav">お気に入りに追加</button>
+  <button type="button" class="cardmenu-item" data-act="read" id="cardmenu-read">読了にする</button>
+  <button type="button" class="cardmenu-item" data-act="move" id="cardmenu-move">「漫画」へ移動</button>
+  <button type="button" class="cardmenu-item danger" data-act="delete" id="cardmenu-delete">削除</button>
+  <button type="button" class="cardmenu-item cancel" data-act="cancel" id="cardmenu-cancel">キャンセル</button>
+</div>
 <div class="sheet-backdrop" id="sheet-backdrop"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
   <div class="sheet-head" id="sheet-head">
@@ -1789,6 +1850,12 @@
   </div>
   <div class="field">
     <div class="field-row">
+      <span class="field-label">読書中は画面を消さない</span>
+      <button class="switch" id="toggle-keep-awake" role="switch" aria-checked="true"></button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
       <span class="field-label">一覧の並び順</span>
     </div>
     <div class="segmented" id="library-sort-toggle" role="group" aria-label="一覧の並び順">
@@ -1832,6 +1899,13 @@
       <button type="button" class="link-btn" id="storage-refresh">再計測</button>
     </div>
     <div class="storage-info" id="storage-info">計測中…</div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">バージョン</span>
+      <span class="field-value" id="app-version"></span>
+    </div>
+    <div class="field-help" id="offline-status"></div>
   </div>
   </div>
 </div>
@@ -1921,6 +1995,12 @@
       </div>
       <div class="pagelist-grid" id="pagelist-grid"></div>
     </div>
+  </div>
+  <div class="viewer-resume" id="viewer-next" role="dialog" aria-label="次の巻">
+    <p id="viewer-next-text">最後のページです</p>
+    <div class="viewer-next-row"><img id="viewer-next-thumb" alt=""><span id="viewer-next-name"></span></div>
+    <button class="btn btn-primary" id="viewer-next-open">次の巻を開く</button>
+    <button class="btn btn-copyname" id="viewer-next-stay">このまま</button>
   </div>
   <div class="viewer-slider" id="viewer-slider">
     <div class="viewer-slider-label" id="viewer-slider-label"></div>
@@ -2110,15 +2190,276 @@
   }
 
   // ---------------------------------------------------------------
+  // 表紙画像 (cover thumbnails)
+  // ---------------------------------------------------------------
+  // Thumbnails used to live inside each "covers" record, so every launch
+  // read all of them (~95MB for ~840 books) just to list the library.
+  // They now live in their own small database and are read only when a
+  // cover is about to be shown. Existing libraries are moved over a few
+  // books at a time in the background (see migrateThumbs): a thumbnail is
+  // copied first and removed from its cover record only after the copy is
+  // stored, and every step can safely run again on the next launch, so an
+  // interrupted move never loses anything. If a thumbnail ever can't be
+  // found at all, it is redrawn from the saved PDF (regenerateThumb).
+  var THUMB_DB = "coverFlipThumbs";
+  var thumbDbPromise = null;
+  var thumbCache = new Map();   // id -> dataURL, most recently used last
+  var THUMB_CACHE_MAX = 240;
+  var thumbPending = new Map(); // id -> Promise<dataURL|null>
+  var thumbBatch = null;        // id -> [resolve]; one read transaction per tick
+  var coversLoaded = false;     // true once the library list really loaded
+
+  function openThumbDB() {
+    if (thumbDbPromise) return thumbDbPromise;
+    var p = new Promise(function (resolve) {
+      var done = false;
+      function finish(db) {
+        if (done) return;
+        done = true;
+        if (!db && thumbDbPromise === p) thumbDbPromise = null; // let a later call retry
+        resolve(db);
+      }
+      var timer = setTimeout(function () { finish(null); }, 6000);
+      try {
+        var req = indexedDB.open(THUMB_DB, 1);
+        req.onupgradeneeded = function () {
+          var db = req.result;
+          if (!db.objectStoreNames.contains("thumbs")) db.createObjectStore("thumbs", { keyPath: "id" });
+        };
+        req.onsuccess = function () {
+          clearTimeout(timer);
+          var db = req.result;
+          db.onversionchange = function () { db.close(); thumbDbPromise = null; };
+          finish(db);
+        };
+        req.onerror = function () { clearTimeout(timer); finish(null); };
+      } catch (e) { clearTimeout(timer); finish(null); }
+    });
+    thumbDbPromise = p;
+    return p;
+  }
+  function cacheThumb(id, url) {
+    if (!url) return;
+    if (thumbCache.has(id)) thumbCache.delete(id);
+    thumbCache.set(id, url);
+    while (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
+  }
+  // The thumbnail if it can be had without waiting (still inside the cover
+  // record, or recently used), else null.
+  function thumbNow(c) {
+    if (!c) return null;
+    if (c.thumb) return c.thumb;
+    var t = thumbCache.get(c.id);
+    if (t) { thumbCache.delete(c.id); thumbCache.set(c.id, t); }
+    return t || null;
+  }
+  function flushThumbBatch() {
+    var batch = thumbBatch;
+    thumbBatch = null;
+    function failAll() { batch.forEach(function (fns) { fns.forEach(function (f) { f(null); }); }); }
+    openThumbDB().then(function (db) {
+      if (!db) { failAll(); return; }
+      var st;
+      try { st = db.transaction("thumbs", "readonly").objectStore("thumbs"); }
+      catch (e) { thumbDbPromise = null; failAll(); return; }
+      batch.forEach(function (fns, id) {
+        var r = st.get(id);
+        r.onsuccess = function () { var v = r.result ? r.result.thumb : null; fns.forEach(function (f) { f(v); }); };
+        r.onerror = function () { fns.forEach(function (f) { f(null); }); };
+      });
+    });
+  }
+  function readThumbFromDb(id) {
+    return new Promise(function (resolve) {
+      if (!thumbBatch) { thumbBatch = new Map(); setTimeout(flushThumbBatch, 0); }
+      if (!thumbBatch.has(id)) thumbBatch.set(id, []);
+      thumbBatch.get(id).push(resolve);
+    });
+  }
+  function saveThumb(id, url) {
+    return openThumbDB().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (resolve) {
+        try {
+          var tx = db.transaction("thumbs", "readwrite");
+          tx.objectStore("thumbs").put({ id: id, thumb: url });
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = tx.onabort = function () { resolve(false); };
+        } catch (e) { resolve(false); }
+      });
+    });
+  }
+  function deleteThumbs(ids) {
+    ids.forEach(function (id) { thumbCache.delete(id); });
+    return openThumbDB().then(function (db) {
+      if (!db || !ids.length) return;
+      try {
+        var st = db.transaction("thumbs", "readwrite").objectStore("thumbs");
+        ids.forEach(function (id) { st.delete(id); });
+      } catch (e) { /* stale rows are cleaned up on a later launch */ }
+    });
+  }
+  function loadThumb(c) {
+    if (!c) return Promise.resolve(null);
+    var now = thumbNow(c);
+    if (now) return Promise.resolve(now);
+    if (thumbPending.has(c.id)) return thumbPending.get(c.id);
+    var p = readThumbFromDb(c.id).then(function (url) {
+      if (url) { cacheThumb(c.id, url); return url; }
+      if (c.thumb) return c.thumb; // moved back meanwhile
+      return regenerateThumb(c);
+    }).then(function (url) {
+      thumbPending.delete(c.id);
+      return url || null;
+    }, function () {
+      thumbPending.delete(c.id);
+      return null;
+    });
+    thumbPending.set(c.id, p);
+    return p;
+  }
+
+  // Safety net: redraw a missing thumbnail from the saved PDF, one book at
+  // a time, with its own canvas so it never collides with an import.
+  var regenChain = Promise.resolve();
+  var regenCanvas = null;
+  function regenerateThumb(c) {
+    var job = regenChain.then(function () {
+      if (covers.indexOf(c) === -1) return null;
+      return idbGet("pdfdata", c.id).then(function (row) {
+        if (!row || !row.blob) return null;
+        if (!regenCanvas) regenCanvas = document.createElement("canvas");
+        return materialize(row.blob).then(function (buf) { return renderPdfCoverToDataUrl(buf, regenCanvas); }).then(function (url) {
+          if (!url) return null;
+          cacheThumb(c.id, url);
+          c.thumbLen = Math.round(url.length * 0.75);
+          return saveThumb(c.id, url).then(function () { return url; });
+        });
+      });
+    }).catch(function (err) {
+      console.warn("表紙の作り直しに失敗しました", c && c.name, err);
+      return null;
+    });
+    regenChain = job.then(function () {}, function () {});
+    return job;
+  }
+
+  // Background move of thumbnails out of the cover records (see above).
+  var thumbMigrationRunning = false;
+  function migrateThumbs() {
+    if (!coversLoaded || thumbMigrationRunning) return;
+    var pending = covers.filter(function (c) { return typeof c.thumb === "string" && c.thumb.length > 0; });
+    if (!pending.length) { scheduleThumbCleanup(); return; }
+    thumbMigrationRunning = true;
+    var i = 0;
+    function stop(err) {
+      thumbMigrationRunning = false;
+      if (err) console.warn("表紙の移行を中断しました（次回の起動で続きから再開します）", err);
+    }
+    openThumbDB().then(function (tdb) {
+      if (!tdb) { stop("thumb db unavailable"); return; }
+      function step() {
+        if (i >= pending.length) { stop(); scheduleThumbCleanup(); return; }
+        var batch = pending.slice(i, i + 20).filter(function (c) { return c.thumb && covers.indexOf(c) !== -1; });
+        i += 20;
+        if (!batch.length) { setTimeout(step, 0); return; }
+        // 1) copy into the thumbnail database
+        new Promise(function (resolve, reject) {
+          var tx;
+          try { tx = tdb.transaction("thumbs", "readwrite", { durability: "strict" }); }
+          catch (e) { try { tx = tdb.transaction("thumbs", "readwrite"); } catch (e2) { reject(e2); return; } }
+          var st = tx.objectStore("thumbs");
+          batch.forEach(function (c) { st.put({ id: c.id, thumb: c.thumb }); });
+          tx.oncomplete = function () { resolve(); };
+          tx.onerror = tx.onabort = function () { reject(tx.error || "copy aborted"); };
+        }).then(function () {
+          // 2) only now drop it from the cover records
+          return openDB().then(function (db) {
+            var saved = [];
+            return new Promise(function (resolve, reject) {
+              var tx = db.transaction("covers", "readwrite");
+              var st = tx.objectStore("covers");
+              batch.forEach(function (c) {
+                if (!c.thumb || covers.indexOf(c) === -1) return; // deleted meanwhile
+                var t = c.thumb;
+                saved.push([c, t]);
+                cacheThumb(c.id, t);
+                c.thumbLen = Math.round(t.length * 0.75);
+                delete c.thumb;
+                var rec = {};
+                Object.keys(c).forEach(function (k) { rec[k] = c[k]; });
+                st.put(rec);
+              });
+              tx.oncomplete = function () { resolve(); };
+              tx.onerror = tx.onabort = function () {
+                // put the thumbnails back in memory; the records still have them
+                saved.forEach(function (p) { p[0].thumb = p[1]; });
+                reject(tx.error || "strip aborted");
+              };
+            });
+          });
+        }).then(function () { setTimeout(step, 60); }, stop);
+      }
+      step();
+    });
+  }
+  // Remove thumbnails whose book no longer exists. Only after the library
+  // list really loaded, and never if the result looks implausible.
+  var thumbCleanupDone = false;
+  function scheduleThumbCleanup() {
+    if (thumbCleanupDone) return;
+    thumbCleanupDone = true;
+    setTimeout(function () {
+      if (!coversLoaded || !covers.length || thumbMigrationRunning) return;
+      openThumbDB().then(function (db) {
+        if (!db) return;
+        var req;
+        try { req = db.transaction("thumbs", "readonly").objectStore("thumbs").getAllKeys(); } catch (e) { return; }
+        req.onsuccess = function () {
+          var have = new Set(covers.map(function (c) { return c.id; }));
+          var orphans = (req.result || []).filter(function (k) { return !have.has(k); });
+          if (!orphans.length || orphans.length > (req.result || []).length / 2) return;
+          deleteThumbs(orphans);
+        };
+      });
+    }, 15000);
+  }
+
+  // Library images: filled in as they come near the screen.
+  var thumbObserver = null;
+  function resetThumbObserver() {
+    if (thumbObserver) thumbObserver.disconnect();
+    thumbObserver = ("IntersectionObserver" in window) ? new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var img = en.target;
+        thumbObserver.unobserve(img);
+        fillThumb(img, img._cover);
+      });
+    }, { rootMargin: "900px 0px" }) : null;
+  }
+  function fillThumb(img, c) {
+    loadThumb(c).then(function (url) { if (url && img._cover === c) img.src = url; });
+  }
+  function attachThumb(img, c) {
+    img._cover = c;
+    var now = thumbNow(c);
+    if (now) { img.src = now; return; }
+    if (thumbObserver) thumbObserver.observe(img); else fillThumb(img, c);
+  }
+
+  // ---------------------------------------------------------------
   // State
   // ---------------------------------------------------------------
-  // persisted cover record: { id, name, thumb (dataURL jpeg), addedAt, folder }
+  // persisted cover record: { id, name, addedAt, folder, category, favorite,
+  // lastPage, pageCount, finished, thumbLen }; the thumbnail itself is in
+  // the separate thumbnail database (older records may still carry "thumb").
   // The PDF bytes themselves are kept as Blobs in the separate "pdfdata"
   // store (see persistPdfBlob), keyed by the same id; sessionPdfCache is
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, keepAwake: true, lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -2371,9 +2712,8 @@
     // ones scrolled out of view -- a few hundred JPEG decodes in one go is
     // what made big libraries stutter when the panel opened.
     img.decoding = "async";
-    img.loading = "lazy";
-    img.src = c.thumb;
-    img.alt = c.name;
+    img.alt = "";
+    attachThumb(img, c);
     card.appendChild(img);
 
     var cap = document.createElement("div");
@@ -2410,15 +2750,15 @@
     return check;
   }
 
-  function buildFolderTile(folderName, members) {
+  function buildFolderTile(folderName, members, fixedCover) {
     var card = document.createElement("div");
     card.className = "card folder-card";
 
     var img = document.createElement("img");
     var initial = members[0];
     img.decoding = "async";
-    img.src = initial.thumb;
-    img.alt = folderName;
+    img.alt = "";
+    attachThumb(img, initial);
     img.dataset.coverId = String(initial.id);
     card.appendChild(img);
 
@@ -2444,7 +2784,7 @@
       renderLibrary();
     });
 
-    folderTiles.push({
+    if (!fixedCover) folderTiles.push({
       imgEl: img,
       members: members,
       nextSwapAt: (typeof performance !== "undefined" ? performance.now() : Date.now()) + Math.random() * settings.interval * 1000 + 400,
@@ -2510,6 +2850,36 @@
     return { order: order, groups: groups, ungrouped: ungrouped };
   }
 
+  // The library grid is built a chunk at a time: the first LIB_CHUNK
+  // covers right away, the rest as the user scrolls toward them. Re-renders
+  // of the same view keep at least as many covers on screen as before, so
+  // the scroll position never jumps back.
+  var LIB_CHUNK = 60;
+  var libItems = [];
+  var libRendered = 0;
+  var libViewKey = "";
+  var libMoreObserver = null;
+  var libSentinel = null;
+  function libraryViewKey() {
+    return [curCat(), currentFolderView === null ? "" : "F:" + currentFolderView, settings.libraryViewMode,
+      settings.librarySort, favFilterActive ? 1 : 0, searchQuery, readFilter].join("|");
+  }
+  function appendLibItems(n) {
+    var frag = document.createDocumentFragment();
+    var end = Math.min(libItems.length, libRendered + n);
+    for (var i = libRendered; i < end; i++) frag.appendChild(libItems[i]());
+    libRendered = end;
+    if (libSentinel && libSentinel.parentNode === grid) grid.insertBefore(frag, libSentinel); else grid.appendChild(frag);
+    if (libRendered >= libItems.length && libSentinel) {
+      if (libMoreObserver) { libMoreObserver.disconnect(); libMoreObserver = null; }
+      libSentinel.remove();
+      libSentinel = null;
+    }
+  }
+  // 漫画: series are browsed in name order and each folder shows its first
+  // volume (no random order, no rotating folder covers).
+  function mangaFolders() { return curCat() === "manga"; }
+
   function renderLibrary() {
     var has = covers.length > 0;
     var list = catCovers();
@@ -2529,11 +2899,18 @@
     visible = searchTerms().length ? visible.slice().sort(coverByName) : orderedCovers(visible);
     var noteCount = visible.length;
 
+    var key = libraryViewKey();
+    var keep = key === libViewKey ? libRendered : 0;
+    libViewKey = key;
     stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
+    if (libMoreObserver) { libMoreObserver.disconnect(); libMoreObserver = null; }
+    libSentinel = null;
+    resetThumbObserver();
 
-    // Build the whole grid off-DOM and swap it in with a single append, so
-    // the browser lays out and paints once instead of once per card.
+    // Messages go straight in; covers become builders appended in chunks.
     var frag = document.createDocumentFragment();
+    var items = [];
+    function cardItem(c) { return function () { return buildCard(c); }; }
 
     if (currentFolderView !== null) {
       // --- Drilled into one folder: every PDF in it ---
@@ -2542,11 +2919,8 @@
       var folderAll = list.filter(function (c) { return c.folder === currentFolderView; });
       var folderCovers = applyFilters(folderAll);
       noteCount = folderCovers.length;
-      // Random order is for browsing the top level; once you've opened a
-      // folder you want its contents in a predictable order -- by file name,
-      // numerically aware, so "第1巻, 第2巻, ... 第10巻" line up correctly.
-      // Favourites first, then everything in name order (each group keeps
-      // the numerically aware name order).
+      // Favourites first, then everything in numerically aware name order
+      // ("第1巻, 第2巻, ... 第10巻").
       folderCovers.sort(function (a, b) {
         var fa = a.favorite ? 0 : 1, fb = b.favorite ? 0 : 1;
         return fa !== fb ? fa - fb : coverByName(a, b);
@@ -2556,8 +2930,7 @@
         ? "（" + folderCovers.length + " / " + folderAll.length + "冊）"
         : "（" + folderCovers.length + "冊）");
       if (filtering && folderCovers.length === 0) renderNoMatchMessage(frag);
-      folderCovers.forEach(function (c) { frag.appendChild(buildCard(c)); });
-      appendAddTile(frag);
+      folderCovers.forEach(function (c) { items.push(cardItem(c)); });
     } else if (!folderMode) {
       // --- Flat mode: every PDF as one grid, ignoring folder grouping ---
       folderBreadcrumb.hidden = true;
@@ -2566,29 +2939,53 @@
         if (filtering) renderNoMatchMessage(frag);
         else if (favFilterActive) renderEmptyFavMessage(frag);
       }
-      visible.forEach(function (c) { frag.appendChild(buildCard(c)); });
-      appendAddTile(frag);
+      visible.forEach(function (c) { items.push(cardItem(c)); });
     } else {
       // --- Folder mode, top level: one tile per folder + ungrouped singles ---
       folderBreadcrumb.hidden = true;
+      var manga = mangaFolders();
       var grouped = groupCoversByFolder(visible);
       // Folder tiles follow the same rule as files: alphabetical in name
-      // mode; otherwise first-seen order in the (shuffled / by-date) list.
-      if (settings.librarySort === "name") grouped.order.sort(byName);
+      // mode (and always for 漫画); otherwise first-seen order in the
+      // (shuffled / by-date) list.
+      if (manga || settings.librarySort === "name") grouped.order.sort(byName);
+      if (manga) grouped.ungrouped.sort(coverByName);
       if (list.length === 0) renderEmptyCatMessage(frag);
       else if (grouped.order.length === 0 && grouped.ungrouped.length === 0) {
         if (filtering) renderNoMatchMessage(frag);
         else if (favFilterActive) renderEmptyFavMessage(frag);
       }
       grouped.order.forEach(function (folderName) {
-        frag.appendChild(buildFolderTile(folderName, grouped.groups[folderName]));
+        var members = grouped.groups[folderName];
+        if (manga) members = members.slice().sort(coverByName);
+        items.push(function () { return buildFolderTile(folderName, members, manga); });
       });
-      grouped.ungrouped.forEach(function (c) { frag.appendChild(buildCard(c)); });
-      appendAddTile(frag);
+      grouped.ungrouped.forEach(function (c) { items.push(cardItem(c)); });
     }
 
     grid.innerHTML = "";
     grid.appendChild(frag);
+    appendAddTile(grid);
+    libItems = items;
+    libRendered = 0;
+    var first = Math.max(keep, LIB_CHUNK);
+    if (items.length > first && "IntersectionObserver" in window) {
+      libSentinel = document.createElement("div");
+      libSentinel.className = "lib-more";
+      grid.appendChild(libSentinel);
+    }
+    appendLibItems(libSentinel ? first : items.length);
+    if (libSentinel) {
+      var obs = new IntersectionObserver(function (entries) {
+        if (!entries.some(function (e) { return e.isIntersecting; })) return;
+        appendLibItems(LIB_CHUNK);
+        // Re-observe so a sentinel that is still in range fires again.
+        if (libSentinel && libMoreObserver === obs) { obs.unobserve(libSentinel); obs.observe(libSentinel); }
+      }, { rootMargin: "1500px 0px" });
+      libMoreObserver = obs;
+      obs.observe(libSentinel);
+    }
+
     libSearchNote.hidden = !filtering || list.length === 0;
     if (filtering) libSearchNote.textContent = noteCount + "冊が該当";
     grid.classList.toggle("selecting", selectMode);
@@ -2669,6 +3066,7 @@
     renderLibrary();
     idbDeleteMany("covers", ids);
     idbDeleteMany("pdfdata", ids);
+    deleteThumbs(ids);
   }
 
   function toggleFavorite(id) {
@@ -2724,6 +3122,7 @@
     if (currentFolderView !== null) return;
     if (selectMode) return; // never move cards around while the user is picking
     if (filtersActive()) return; // keep search / filter results still
+    if (mangaFolders() && settings.libraryViewMode === "folder") return; // name order there
     if (covers.length < 2) return;
     covers = shuffle(covers);
     renderLibrary();
@@ -2768,13 +3167,16 @@
     var currentId = tile.imgEl.dataset.coverId;
     var candidates = tile.members.filter(function (c) { return String(c.id) !== currentId; });
     var next = candidates.length > 0 ? candidates[Math.floor(Math.random() * candidates.length)] : tile.members[0];
-    tile.imgEl.style.opacity = "0";
-    setTimeout(function () {
-      tile.imgEl.src = next.thumb;
-      tile.imgEl.alt = next.name;
-      tile.imgEl.dataset.coverId = String(next.id);
-      tile.imgEl.style.opacity = "1";
-    }, 220);
+    loadThumb(next).then(function (url) {
+      if (!url) return;
+      tile.imgEl.style.opacity = "0";
+      setTimeout(function () {
+        tile.imgEl._cover = next;
+        tile.imgEl.src = url;
+        tile.imgEl.dataset.coverId = String(next.id);
+        tile.imgEl.style.opacity = "1";
+      }, 220);
+    });
   }
   function folderTileTick() {
     if (document.hidden) return;
@@ -2852,9 +3254,10 @@
   // Reused across every thumbnail render so we only ever have one <canvas>
   // backing store alive at a time -- iOS Safari can otherwise accumulate
   // canvas memory across many one-off canvases and reload the tab.
-  var thumbCanvas = document.createElement("canvas");
+  var sharedThumbCanvas = document.createElement("canvas");
 
-  function renderPdfCoverToDataUrl(arrayBuffer) {
+  function renderPdfCoverToDataUrl(arrayBuffer, canvasArg) {
+    var thumbCanvas = canvasArg || sharedThumbCanvas;
     ensureWorker();
     var loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
     return loadingTask.promise.then(function (pdf) {
@@ -3072,12 +3475,19 @@
     materialize(file)
       .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
       .then(function (dataUrl) {
-        var record = { name: fileBaseName(file.name), thumb: dataUrl, addedAt: Date.now(), folder: folderFromFile(file), category: file._cat || curCat() };
+        var record = { name: fileBaseName(file.name), addedAt: Date.now(), folder: folderFromFile(file), category: file._cat || curCat(), thumbLen: Math.round(dataUrl.length * 0.75) };
         return idbPut("covers", record).then(function (newId) {
           record.id = newId;
-          sessionPdfCache.set(newId, file);
-          covers.push(record);
-          return persistPdfBlob(newId, file);
+          cacheThumb(newId, dataUrl);
+          return saveThumb(newId, dataUrl).then(function (ok) {
+            // Thumbnail database unavailable: keep it in the record instead
+            // of losing it (it is moved over on a later launch).
+            if (!ok) { record.thumb = dataUrl; return idbPut("covers", record); }
+          }).then(function () {
+            sessionPdfCache.set(newId, file);
+            covers.push(record);
+            return persistPdfBlob(newId, file);
+          });
         });
       })
       .catch(function (err) { console.error("PDF処理エラー", file.name, err); })
@@ -3122,13 +3532,38 @@
     });
     if (order.length < 2) { handleFiles(pdfs); return; } // nothing to choose between
     order.sort(byName);
-    folderPickGroups = order.map(function (g) { return { name: g, files: groups[g], checked: false }; }); // start with nothing ticked
+    var countNew = newBookCounter();
+    folderPickGroups = order.map(function (g) { return { name: g, files: groups[g], checked: false, newCount: countNew(groups[g]) }; }); // start with nothing ticked
     renderFolderPick();
     setFolderPickDest(curCat());
     folderSheetBackdrop.classList.add("open");
     folderSheet.classList.add("open");
   }
 
+  // How many of these files would really be added -- the same rules as
+  // handleFiles(): same folder + name is the same book; a file picked
+  // without a folder matches any book of that name; a folder file also
+  // matches a same-named book that has no folder yet.
+  function newBookCounter() {
+    var byKey = {}, byName = {}, byNameNoFolder = {};
+    covers.forEach(function (c) {
+      byKey[coverKey(c.folder, c.name)] = true;
+      byName[c.name] = true;
+      if (!c.folder) byNameNoFolder[c.name] = true;
+    });
+    var seen = {};
+    return function (files) {
+      var n = 0;
+      files.forEach(function (f) {
+        var name = fileBaseName(f.name), folder = folderFromFile(f), key = coverKey(folder, name);
+        if (byKey[key] || seen[key]) return;
+        if (folder ? byNameNoFolder[name] : byName[name]) return;
+        seen[key] = true;
+        n++;
+      });
+      return n;
+    };
+  }
   function renderFolderPick() {
     folderPickList.innerHTML = "";
     var frag = document.createDocumentFragment();
@@ -3141,7 +3576,9 @@
         + '<span class="folder-pick-name' + (g.name ? "" : " muted") + '"></span>'
         + '<span class="folder-pick-count"></span>';
       row.querySelector(".folder-pick-name").textContent = g.name || "（フォルダ直下のPDF）";
-      row.querySelector(".folder-pick-count").textContent = g.files.length + "冊";
+      var nc = typeof g.newCount === "number" ? g.newCount : g.files.length;
+      row.querySelector(".folder-pick-count").textContent = g.files.length + "冊・" + (nc === 0 ? "取り込み済み" : nc === g.files.length ? "新規" : "新規" + nc);
+      if (nc === 0) row.classList.add("all-imported");
       row._group = g; // taps are routed by the sheet-level dispatcher below
       frag.appendChild(row);
     });
@@ -3150,10 +3587,15 @@
   }
 
   function updateFolderPickSummary() {
-    var n = 0, files = 0;
-    folderPickGroups.forEach(function (g) { if (g.checked) { n++; files += g.files.length; } });
-    folderPickSummary.textContent = folderPickGroups.length + "フォルダ中 " + n + "フォルダ（" + files + "冊）を選択";
-    folderPickImport.textContent = files > 0 ? files + "冊を取り込む" : "取り込む";
+    var n = 0, files = 0, fresh = 0;
+    folderPickGroups.forEach(function (g) {
+      if (!g.checked) return;
+      n++;
+      files += g.files.length;
+      fresh += typeof g.newCount === "number" ? g.newCount : g.files.length;
+    });
+    folderPickSummary.textContent = folderPickGroups.length + "フォルダ中 " + n + "フォルダ（" + files + "冊・新規" + fresh + "冊）を選択";
+    folderPickImport.textContent = files === 0 ? "取り込む" : fresh > 0 ? fresh + "冊を取り込む" : "取り込む（新規なし）";
     folderPickImport.disabled = files === 0;
     var all = folderPickGroups.every(function (g) { return g.checked; });
     folderPickToggleAll.textContent = all ? "すべて解除" : "すべて選択";
@@ -3274,6 +3716,7 @@
     sheet.classList.add("open");
     document.documentElement.classList.add("sheet-open");
     measureStorage();
+    syncOfflineStatus();
   }
 
   // ---------------------------------------------------------------
@@ -3317,7 +3760,7 @@
     storageInfo.textContent = "計測中…";
     var thumbBytes = covers.reduce(function (acc, c) {
       // dataURL is base64: ~3/4 of its length is the JPEG's real size
-      return acc + (c.thumb ? Math.round(c.thumb.length * 0.75) : 0);
+      return acc + (c.thumbLen || (c.thumb ? Math.round(c.thumb.length * 0.75) : 0));
     }, 0);
     var est = (navigator.storage && navigator.storage.estimate) ? navigator.storage.estimate().catch(function () { return null; }) : Promise.resolve(null);
     Promise.all([sumPdfDataBytes().catch(function () { return { bytes: 0, count: 0 }; }), est]).then(function (r) {
@@ -3360,6 +3803,7 @@
     directionRtlBtn.setAttribute("aria-pressed", isRtl() ? "true" : "false");
     syncViewerOptsUI();
     syncLockUI();
+    $("toggle-keep-awake").setAttribute("aria-checked", settings.keepAwake === false ? "false" : "true");
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
     Object.keys(librarySortBtns).forEach(function (k) {
@@ -3460,20 +3904,25 @@
 
   function setTileCover(tile, record, immediate) {
     tile.current = record;
-    var showEl = tile.showingA ? tile.imgA : tile.imgB;
-    var hideEl = tile.showingA ? tile.imgB : tile.imgA;
-    showEl.src = record.thumb;
-    showEl.alt = record.name;
-    if (immediate) {
-      showEl.classList.add("show");
-      hideEl.classList.remove("show");
-    } else {
-      requestAnimationFrame(function () {
+    function apply(url) {
+      if (tile.current !== record || !url) return;
+      var showEl = tile.showingA ? tile.imgA : tile.imgB;
+      var hideEl = tile.showingA ? tile.imgB : tile.imgA;
+      showEl.src = url;
+      showEl.alt = record.name;
+      if (immediate) {
         showEl.classList.add("show");
         hideEl.classList.remove("show");
-      });
+      } else {
+        requestAnimationFrame(function () {
+          showEl.classList.add("show");
+          hideEl.classList.remove("show");
+        });
+      }
+      tile.showingA = !tile.showingA;
     }
-    tile.showingA = !tile.showingA;
+    var now = thumbNow(record);
+    if (now) apply(now); else loadThumb(record).then(apply);
     tile.capEl.textContent = record.name;
     tile.capEl.classList.toggle("show", !!settings.caption);
     syncWallTileFav(tile);
@@ -3493,8 +3942,25 @@
 
   // Draws a fresh random set into the tiles. Used both when the wall opens
   // and every time "ランダムに選び直す" is tapped.
+  // 漫画: one candidate per series (folder) -- the volume to read next
+  // (first one, in name order, not yet finished; the first volume if all
+  // are finished). Books outside any folder count as their own series.
+  function seriesPool(list) {
+    var groups = {}, reps = [];
+    list.forEach(function (c) {
+      if (!c.folder) reps.push(c);
+      else (groups[c.folder] = groups[c.folder] || []).push(c);
+    });
+    Object.keys(groups).forEach(function (f) {
+      var m = groups[f].slice().sort(coverByName);
+      var next = null;
+      for (var i = 0; i < m.length; i++) { if (!m[i].finished) { next = m[i]; break; } }
+      reps.push(next || m[0]);
+    });
+    return reps;
+  }
   function dealWall() {
-    wallPool = shuffle(catCovers());
+    wallPool = shuffle(curCat() === "manga" ? seriesPool(catCovers()) : catCovers());
     buildWallGrid();
     wallTiles.forEach(function (tile) {
       var record = pickForTile(currentlyShownIds());
@@ -3609,7 +4075,14 @@
     viewerTitle.textContent = record.name;
     viewerPageLabel.textContent = "";
     viewerImg.style.display = "block";
-    viewerImg.src = record.thumb;
+    var vThumb = thumbNow(record);
+    if (vThumb) viewerImg.src = vThumb;
+    else {
+      viewerImg.removeAttribute("src");
+      loadThumb(record).then(function (url) {
+        if (url && viewerRecord === record && viewerImg.style.display !== "none") viewerImg.src = url;
+      });
+    }
     syncViewerFavButton();
     viewerTrack.style.display = "none";
     viewerPageNum = 1;
@@ -3619,6 +4092,9 @@
     viewerOpenFolder.hidden = !record.folder;
     viewerPagesBtn.disabled = true;
     teardownPageList();
+    hideNextPrompt();
+    clearPrefetch();
+    requestWakeLock();
 
     var cached = sessionPdfCache.get(record.id);
     if (cached) {
@@ -3874,64 +4350,43 @@
 
   // _renderedPage holds a key for what the canvas shows (pages, layout
   // direction, slot size) so it's only redrawn when something changed.
-  function slotKey(start, slot) {
-    var w = slot.clientWidth || window.innerWidth;
-    var h = slot.clientHeight || window.innerHeight;
+  function viewKey(start, w, h) {
     var v = viewPages(start);
     return v.join("-") + (v.length === 2 && isRtl() ? "r" : "") + "@" + w + "x" + h;
   }
-  function renderPageIntoCanvas(canvas, start, gen) {
-    var pages = viewPages(start);
-    if (!viewerPdf || !pages.length) {
-      canvas._renderedPage = "none";
-      canvas.width = 2;
-      canvas.height = 2;
-      return Promise.resolve();
-    }
-    var slot = canvas.parentElement;
-    var key = slotKey(start, slot);
-    if (canvas._renderedPage === key) return Promise.resolve(); // already correct
-    if (pages.length === 2) return renderSpreadIntoCanvas(canvas, pages, key, gen);
-    var pageNum = pages[0];
-    return viewerPdf.getPage(pageNum).then(function (page) {
-      if (gen !== viewerRenderGen) return;
-      var maxW = slot.clientWidth || window.innerWidth;
-      var maxH = slot.clientHeight || window.innerHeight;
-      var baseViewport = page.getViewport({ scale: 1 });
-      var scale = Math.min(maxW / baseViewport.width, maxH / baseViewport.height) * (window.devicePixelRatio || 1);
-      if (!isFinite(scale) || scale <= 0) scale = 1;
-      var viewport = page.getViewport({ scale: scale });
-      canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      var ctx = canvas.getContext("2d");
-      return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () {
-        canvas._renderedPage = key;
-      });
-    }).catch(function (err) {
-      console.error("ページ描画エラー", pageNum, err);
-    });
+  function slotDims(slot) {
+    return { w: (slot && slot.clientWidth) || window.innerWidth, h: (slot && slot.clientHeight) || window.innerHeight };
   }
-
-  // Two facing pages drawn side by side at a common height. Each page is
-  // rendered into its own scratch canvas first and then composed, so the
-  // visible canvas never shows a half-drawn spread.
-  function renderSpreadIntoCanvas(canvas, pages, key, gen) {
-    var order = isRtl() ? pages.slice().reverse() : pages;
-    var slot = canvas.parentElement;
-    var maxW = slot.clientWidth || window.innerWidth;
-    var maxH = slot.clientHeight || window.innerHeight;
+  // Draws one view (a page, or two facing pages at a common height) into
+  // `canvas`, sized to fit w x h. alive() says whether the result is still
+  // wanted; resolves true once the canvas holds the finished view.
+  function drawView(canvas, pages, w, h, alive) {
+    var pdf = viewerPdf;
     var dpr = window.devicePixelRatio || 1;
-    return Promise.all(order.map(function (p) { return viewerPdf.getPage(p); })).then(function (pgs) {
-      if (gen !== viewerRenderGen) return;
+    var order = pages.length === 2 && isRtl() ? pages.slice().reverse() : pages;
+    return Promise.all(order.map(function (p) { return pdf.getPage(p); })).then(function (pgs) {
+      if (!alive()) return false;
+      if (pgs.length === 1) {
+        var page = pgs[0];
+        var base = page.getViewport({ scale: 1 });
+        var scale = Math.min(w / base.width, h / base.height) * dpr;
+        if (!isFinite(scale) || scale <= 0) scale = 1;
+        var viewport = page.getViewport({ scale: scale });
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        return page.render({ canvasContext: canvas.getContext("2d"), viewport: viewport }).promise.then(function () { return true; });
+      }
+      // Two pages: each into its own scratch canvas, then composed, so a
+      // visible canvas never shows a half-drawn spread.
       var vps = pgs.map(function (pg) { return pg.getViewport({ scale: 1 }); });
       var ratioSum = vps.reduce(function (a, v) { return a + v.width / v.height; }, 0);
-      var H = Math.min(maxH, maxW / ratioSum);
-      if (!isFinite(H) || H <= 0) H = maxH;
+      var H = Math.min(h, w / ratioSum);
+      if (!isFinite(H) || H <= 0) H = h;
       var parts = [];
       var chain = Promise.resolve();
       pgs.forEach(function (pg, i) {
         chain = chain.then(function () {
-          if (gen !== viewerRenderGen) return;
+          if (!alive()) return;
           var vp = pg.getViewport({ scale: H * dpr / vps[i].height });
           var tmp = document.createElement("canvas");
           tmp.width = Math.round(vp.width);
@@ -3940,7 +4395,10 @@
         });
       });
       return chain.then(function () {
-        if (gen !== viewerRenderGen || parts.length !== pgs.length) return;
+        if (!alive() || parts.length !== pgs.length) {
+          parts.forEach(function (t) { t.width = 0; t.height = 0; });
+          return false;
+        }
         var totalW = parts.reduce(function (a, t) { return a + t.width; }, 0);
         var outH = Math.max.apply(null, parts.map(function (t) { return t.height; }));
         canvas.width = totalW;
@@ -3952,11 +4410,98 @@
           x += t.width;
           t.width = 0; t.height = 0; // release the scratch bitmap
         });
-        canvas._renderedPage = key;
+        return true;
       });
-    }).catch(function (err) {
-      console.error("見開き描画エラー", pages, err);
     });
+  }
+  function renderPageIntoCanvas(canvas, start, gen) {
+    var pages = viewPages(start);
+    if (!viewerPdf || !pages.length) {
+      canvas._renderedPage = "none";
+      canvas.width = 2;
+      canvas.height = 2;
+      return Promise.resolve();
+    }
+    var d = slotDims(canvas.parentElement);
+    var key = viewKey(start, d.w, d.h);
+    if (canvas._renderedPage === key) return Promise.resolve(); // already correct
+    var ready = takePrefetched(key);
+    if (ready) {
+      canvas.width = ready.width;
+      canvas.height = ready.height;
+      canvas.getContext("2d").drawImage(ready, 0, 0);
+      canvas._renderedPage = key;
+      return Promise.resolve();
+    }
+    return drawView(canvas, pages, d.w, d.h, function () { return gen === viewerRenderGen; }).then(function (ok) {
+      if (ok) canvas._renderedPage = key;
+    }).catch(function (err) {
+      console.error("ページ描画エラー", pages, err);
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // 先読み: after the visible slots are done, the next couple of views
+  // (in reading order) are drawn ahead into spare canvases, so turning
+  // pages quickly doesn't wait for rendering. Small and bounded: at most
+  // PF_MAX spare canvases, dropped when the PDF closes.
+  // ---------------------------------------------------------------
+  var PF_AHEAD = 2;
+  var PF_MAX = 3;
+  var pfCache = new Map(); // key -> canvas, most recently used last
+  var pfGen = 0;
+  var pfBusy = false;
+  var pfTimer = null;
+  function takePrefetched(key) {
+    var c = pfCache.get(key);
+    if (!c) return null;
+    pfCache.delete(key);
+    pfCache.set(key, c);
+    return c;
+  }
+  function storePrefetched(key, canvas) {
+    if (pfCache.has(key)) { var old = pfCache.get(key); if (old !== canvas) { old.width = 0; old.height = 0; } pfCache.delete(key); }
+    pfCache.set(key, canvas);
+    while (pfCache.size > PF_MAX) {
+      var k = pfCache.keys().next().value;
+      var c = pfCache.get(k);
+      pfCache.delete(k);
+      c.width = 0; c.height = 0;
+    }
+  }
+  function clearPrefetch() {
+    pfGen++;
+    clearTimeout(pfTimer);
+    pfBusy = false;
+    pfCache.forEach(function (c) { c.width = 0; c.height = 0; });
+    pfCache.clear();
+  }
+  function schedulePrefetch() {
+    clearTimeout(pfTimer);
+    pfTimer = setTimeout(runPrefetch, 150);
+  }
+  function runPrefetch() {
+    if (pfBusy || !viewerPdf || !viewer.classList.contains("open") || viewerTrack.style.display === "none") return;
+    var d = slotDims(viewerSlotMid);
+    var s = nextViewStart(viewerPageNum); // already in a slot
+    for (var k = 0; k < PF_AHEAD; k++) {
+      s = nextViewStart(s);
+      if (s > viewerPageCount) return;
+      var key = viewKey(s, d.w, d.h);
+      if (pfCache.has(key)) continue;
+      var gen = pfGen, pdf = viewerPdf, canvas = document.createElement("canvas");
+      pfBusy = true;
+      drawView(canvas, viewPages(s), d.w, d.h, function () { return gen === pfGen && pdf === viewerPdf; }).then(function (ok) {
+        if (gen !== pfGen) { canvas.width = 0; canvas.height = 0; return; }
+        pfBusy = false;
+        if (ok) { storePrefetched(key, canvas); schedulePrefetch(); }
+        else { canvas.width = 0; canvas.height = 0; }
+      }, function () {
+        if (gen === pfGen) pfBusy = false;
+        canvas.width = 0; canvas.height = 0;
+      });
+      return; // one at a time
+    }
   }
 
   // Slot content assignment: which page number sits in the left/right slot
@@ -4007,6 +4552,7 @@
     if (showSpinner) viewerSpinner.classList.add("show");
     renderAllSlots().then(function () {
       if (showSpinner) viewerSpinner.classList.remove("show");
+      schedulePrefetch();
     });
   }
 
@@ -4040,6 +4586,7 @@
   // depends on reading direction, since that's what determines whether the
   // right slot holds the next page or the previous one (see renderAllSlots).
   function commitTurn(dir) {
+    hideNextPrompt();
     animateTrackTo(dir === -1 ? -viewerStageWidth : viewerStageWidth, function () {
       rotateCanvases(dir);
       var revealedRight = dir === -1;
@@ -4048,7 +4595,7 @@
       viewerPageLabel.textContent = pageLabelText();
       rememberPage();
       setTrackTransform(0);
-      renderAllSlots(); // only the one newly-exposed lookahead slot actually redraws
+      renderAllSlots().then(schedulePrefetch); // only the newly-exposed lookahead slot redraws (often from the 先読み)
       if (sliderOpen) setSliderVisual(viewerPageNum);
     });
   }
@@ -4221,6 +4768,7 @@
   var gestureState = GESTURE_IDLE;
   var gestureStartX = 0, gestureStartY = 0;
   var dragDeltaPx = 0;
+  var dragRawDx = 0;
   var AXIS_LOCK_PX = 6;
   var PAGE_COMMIT_RATIO = 0.14;
   var PAGE_COMMIT_MIN_PX = 34;
@@ -4252,12 +4800,15 @@
 
   function handleViewerTap(touch) {
     if (!touch || !viewerPdf) return;
+    if (viewerNext.classList.contains("show")) { hideNextPrompt(); return; }
     // Use the middle slot's rect, not the track's own — the track is 3
     // slots (300%) wide and shifted by transform, so its bounding rect
     // does not correspond to what's actually visible on screen.
     var rect = viewerSlotMid.getBoundingClientRect();
     if (rect.width <= 0) return;
     var xRatio = (touch.clientX - rect.left) / rect.width;
+    var forwardSide = isRtl() ? xRatio < 0.33 : xRatio > 0.67;
+    if (forwardSide && atLastView() && offerNextVolume()) return;
     if (xRatio < 0.33 && canRevealLeftSlot()) commitTurn(1);
     else if (xRatio > 0.67 && canRevealRightSlot()) commitTurn(-1);
     else toggleSlider(); // middle third: no page-turn action, so it's free for this
@@ -4270,6 +4821,7 @@
     dragDeltaPx = 0;
     gestureState = GESTURE_IDLE;
     velocitySamples = [{ t: ev.timeStamp || Date.now(), x: gestureStartX }];
+    dragRawDx = 0;
     dragVelocityPxMs = 0;
     viewerTrack.style.transition = "none";
   }, { passive: true });
@@ -4288,6 +4840,7 @@
       recordVelocitySample(ev.timeStamp || Date.now(), x);
 
       dragDeltaPx = dx;
+      dragRawDx = dx;
       // Soft rubber-band when dragging toward a side with no page there.
       if (dx > 0 && !canRevealLeftSlot()) dragDeltaPx = Math.pow(dx, 0.7);
       if (dx < 0 && !canRevealRightSlot()) dragDeltaPx = -Math.pow(-dx, 0.7);
@@ -4307,6 +4860,9 @@
         commitTurn(1);
       } else {
         settleBack();
+        // A real swipe onward from the last page: offer the next volume.
+        var fwd = isRtl() ? dragRawDx >= threshold : dragRawDx <= -threshold;
+        if (fwd && atLastView()) offerNextVolume();
       }
     } else if (gestureState === GESTURE_VERT) {
       var touch = ev.changedTouches && ev.changedTouches[0];
@@ -4329,6 +4885,94 @@
   viewerTrack.addEventListener("click", function (ev) {
     if (Date.now() - lastViewerTouchEnd < 500) return;
     handleViewerTap({ clientX: ev.clientX, clientY: ev.clientY });
+  });
+
+  // ---------------------------------------------------------------
+  // 次の巻: trying to go on from the last page offers the next PDF of the
+  // same folder (numerically aware name order: 第1巻 → 第2巻 ...).
+  // ---------------------------------------------------------------
+  var viewerNext = $("viewer-next");
+  var viewerNextText = $("viewer-next-text");
+  var viewerNextThumb = $("viewer-next-thumb");
+  var viewerNextName = $("viewer-next-name");
+  var viewerNextOpen = $("viewer-next-open");
+  var viewerNextStay = $("viewer-next-stay");
+  var nextVolume = null;
+  function atLastView() { return !!viewerPdf && nextViewStart(viewerPageNum) > viewerPageCount; }
+  function nextVolumeOf(rec) {
+    if (!rec || !rec.folder) return null;
+    var list = covers.filter(function (c) { return c.folder === rec.folder; }).sort(coverByName);
+    var i = -1;
+    for (var k = 0; k < list.length; k++) { if (list[k] === rec || list[k].id === rec.id) { i = k; break; } }
+    return i >= 0 && i < list.length - 1 ? list[i + 1] : null;
+  }
+  function offerNextVolume() {
+    var next = nextVolumeOf(viewerRecord);
+    if (!next) return false;
+    nextVolume = next;
+    closeSlider();
+    viewerNextText.textContent = "最後のページです。次の巻を開きますか？";
+    viewerNextName.textContent = next.name;
+    viewerNextThumb.removeAttribute("src");
+    loadThumb(next).then(function (url) { if (url && nextVolume === next) viewerNextThumb.src = url; });
+    viewerNext.classList.add("show");
+    return true;
+  }
+  function hideNextPrompt() {
+    viewerNext.classList.remove("show");
+    nextVolume = null;
+  }
+  viewerNextStay.addEventListener("click", hideNextPrompt);
+  viewerNextOpen.addEventListener("click", function () {
+    var next = nextVolume;
+    hideNextPrompt();
+    if (!next || covers.indexOf(next) === -1) return;
+    var prev = viewerRecord;
+    // Finish with the current book the same way closing the viewer does,
+    // but keep the viewer itself open for the next one.
+    flushPageSave();
+    teardownPageList();
+    clearPrefetch();
+    closeSlider();
+    if (viewerPdf) { try { viewerPdf.destroy(); } catch (e) {} }
+    viewerPdf = null;
+    viewerRenderGen++;
+    if (prev) refreshCardReadState(prev);
+    openViewer(next);
+  });
+
+  // ---------------------------------------------------------------
+  // 読書中は画面を消さない (Screen Wake Lock; home-screen web apps on
+  // iOS 18.4+). Held only while the viewer is open; iOS drops it when the
+  // app goes to the background, so it is asked for again on return.
+  // ---------------------------------------------------------------
+  var wakeLock = null;
+  var wakeLockAsking = false;
+  function requestWakeLock() {
+    if (settings.keepAwake === false || wakeLock || wakeLockAsking) return;
+    if (!("wakeLock" in navigator) || document.hidden || !viewer.classList.contains("open")) return;
+    wakeLockAsking = true;
+    navigator.wakeLock.request("screen").then(function (lock) {
+      wakeLockAsking = false;
+      if (!viewer.classList.contains("open") || settings.keepAwake === false) { lock.release().catch(function () {}); return; }
+      wakeLock = lock;
+      lock.addEventListener("release", function () { if (wakeLock === lock) wakeLock = null; });
+    }).catch(function () { wakeLockAsking = false; });
+  }
+  function releaseWakeLock() {
+    var lock = wakeLock;
+    wakeLock = null;
+    if (lock) lock.release().catch(function () {});
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && viewer.classList.contains("open")) requestWakeLock();
+  });
+  var toggleKeepAwake = $("toggle-keep-awake");
+  toggleKeepAwake.addEventListener("click", function () {
+    var v = settings.keepAwake === false;
+    saveSetting("keepAwake", v);
+    toggleKeepAwake.setAttribute("aria-checked", v ? "true" : "false");
+    if (v) requestWakeLock(); else releaseWakeLock();
   });
 
   // ---------------------------------------------------------------
@@ -4475,6 +5119,9 @@
 
   function closeViewer() {
     teardownPageList();
+    hideNextPrompt();
+    clearPrefetch();
+    releaseWakeLock();
     var closedRecord = viewerRecord;
     flushPageSave();
     viewerResume.classList.remove("show");
@@ -4490,12 +5137,13 @@
 
   // Jump from a PDF (e.g. one opened from the favourites list or the
   // random display) to the folder it lives in, showing all of its PDFs.
-  function openFolderInLibrary(folder) {
+  function openFolderInLibrary(folder, rec) {
     if (!folder) return;
+    var book = rec || viewerRecord;
     closeViewer();
     if (wall.classList.contains("open")) stopWall();
     if (selectMode) exitSelectMode(false);
-    if (viewerRecord && catOf(viewerRecord) !== curCat()) saveSetting("category", catOf(viewerRecord));
+    if (book && catOf(book) !== curCat()) saveSetting("category", catOf(book));
     clearLibFilters();
     currentFolderView = folder;
     if (!libraryPanel.classList.contains("open")) {
@@ -4522,6 +5170,166 @@
 
   window.addEventListener("resize", function () {
     if (viewer.classList.contains("open") && viewerPdf && viewerTrack.style.display !== "none") syncViewerTrack(false);
+  });
+
+  // ---------------------------------------------------------------
+  // 長押しメニュー: press and hold a cover in the library for quick actions
+  // (フォルダを開く / お気に入り / 読了・未読 / 分類の移動 / 削除). Same
+  // safety rules as the other overlays: no scrolling inside, the page
+  // behind is held still, and taps are matched by position.
+  // ---------------------------------------------------------------
+  var cardMenu = $("cardmenu");
+  var cardMenuBackdrop = $("cardmenu-backdrop");
+  var cardMenuThumb = $("cardmenu-thumb");
+  var cardMenuTitle = $("cardmenu-title");
+  var cardMenuSub = $("cardmenu-sub");
+  var cardMenuFolder = $("cardmenu-folder");
+  var cardMenuFav = $("cardmenu-fav");
+  var cardMenuRead = $("cardmenu-read");
+  var cardMenuMove = $("cardmenu-move");
+  var cardMenuRec = null;
+  var cardMenuOpenedAt = 0;
+  var LONG_PRESS_MS = 500;
+  var lpTimer = null, lpStart = null, lpSuppressUntil = 0;
+
+  function recById(id) {
+    for (var i = 0; i < covers.length; i++) if (String(covers[i].id) === String(id)) return covers[i];
+    return null;
+  }
+  function bookCardFrom(target) {
+    var card = target && target.closest ? target.closest(".card") : null;
+    if (!card || card.classList.contains("folder-card") || !card.dataset.id) return null;
+    return card;
+  }
+  function openCardMenu(rec) {
+    cardMenuRec = rec;
+    cardMenuTitle.textContent = rec.name;
+    cardMenuSub.textContent = [CAT_LABEL[catOf(rec)], rec.folder || "フォルダなし", rec.pageCount ? rec.pageCount + "ページ" : ""].filter(Boolean).join("・");
+    cardMenuThumb.removeAttribute("src");
+    loadThumb(rec).then(function (url) { if (url && cardMenuRec === rec) cardMenuThumb.src = url; });
+    cardMenuFolder.hidden = !rec.folder || currentFolderView === rec.folder;
+    cardMenuFav.textContent = rec.favorite ? "お気に入りから外す" : "お気に入りに追加";
+    cardMenuRead.textContent = readState(rec) === "done" ? "未読に戻す" : "読了にする";
+    cardMenuMove.textContent = "「" + CAT_LABEL[catOf(rec) === "manga" ? "doujin" : "manga"] + "」へ移動";
+    cardMenuBackdrop.classList.add("open");
+    cardMenu.classList.add("open");
+    document.documentElement.classList.add("sheet-open");
+    cardMenuOpenedAt = Date.now();
+  }
+  function closeCardMenu() {
+    cardMenuBackdrop.classList.remove("open");
+    cardMenu.classList.remove("open");
+    if (!sheet.classList.contains("open")) document.documentElement.classList.remove("sheet-open");
+    cardMenuRec = null;
+  }
+  function cardMenuAction(act) {
+    var rec = cardMenuRec;
+    closeCardMenu();
+    if (!rec || act === "cancel" || covers.indexOf(rec) === -1) return;
+    if (act === "folder") {
+      openFolderInLibrary(rec.folder, rec);
+    } else if (act === "fav") {
+      toggleFavorite(rec.id);
+    } else if (act === "read") {
+      if (readState(rec) === "done") { rec.finished = false; delete rec.lastPage; }
+      else rec.finished = true;
+      idbPut("covers", rec);
+      refreshCardReadState(rec);
+    } else if (act === "move") {
+      moveCovers([rec.id], catOf(rec) === "manga" ? "doujin" : "manga");
+    } else if (act === "delete") {
+      if (!confirm("「" + rec.name + "」を削除します。\nこの操作は取り消せません。よろしいですか？")) return;
+      removeCovers([rec.id]);
+    }
+  }
+  function cardMenuButtonAt(x, y) {
+    var bs = cardMenu.querySelectorAll("button");
+    for (var i = 0; i < bs.length; i++) {
+      if (bs[i].hidden || !bs[i].offsetParent) continue;
+      if (inRect(bs[i], x, y)) return bs[i];
+    }
+    return null;
+  }
+  function cardMenuTap(x, y, fromPointer, target) {
+    if (Date.now() - cardMenuOpenedAt < 350) return; // the finger that opened it
+    var b = fromPointer ? cardMenuButtonAt(x, y) : (target && target.closest ? target.closest("button") : null);
+    if (b && b.dataset.act) cardMenuAction(b.dataset.act);
+  }
+  var cardMenuTouchAt = 0, cardMenuTouchStart = null;
+  cardMenu.addEventListener("touchstart", function (ev) {
+    var t = ev.touches[0];
+    cardMenuTouchStart = t ? { x: t.clientX, y: t.clientY } : null;
+  }, { passive: true });
+  cardMenu.addEventListener("touchend", function (ev) {
+    var t = ev.changedTouches && ev.changedTouches[0];
+    if (!t) return;
+    ev.preventDefault();
+    cardMenuTouchAt = Date.now();
+    if (cardMenuTouchStart && Math.abs(t.clientX - cardMenuTouchStart.x) + Math.abs(t.clientY - cardMenuTouchStart.y) > 24) return;
+    cardMenuTap(t.clientX, t.clientY, true);
+  }, { passive: false });
+  cardMenu.addEventListener("click", function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (Date.now() - cardMenuTouchAt < 800) return;
+    var fromPointer = ev.isTrusted && !(ev.clientX === 0 && ev.clientY === 0);
+    cardMenuTap(ev.clientX, ev.clientY, fromPointer, ev.target);
+  }, true);
+  cardMenuBackdrop.addEventListener("touchmove", function (ev) { ev.preventDefault(); }, { passive: false });
+  cardMenuBackdrop.addEventListener("touchend", function (ev) {
+    ev.preventDefault();
+    if (Date.now() - cardMenuOpenedAt < 350) return;
+    closeCardMenu();
+  }, { passive: false });
+  cardMenuBackdrop.addEventListener("click", function () {
+    if (Date.now() - cardMenuOpenedAt < 350) return;
+    closeCardMenu();
+  });
+
+  // Long-press detection on the library grid.
+  function clearLongPress() {
+    clearTimeout(lpTimer);
+    lpTimer = null;
+    lpStart = null;
+  }
+  grid.addEventListener("touchstart", function (ev) {
+    clearLongPress();
+    if (selectMode || ev.touches.length !== 1) return;
+    var card = bookCardFrom(ev.target);
+    if (!card || (ev.target.closest && ev.target.closest(".fav"))) return;
+    var t = ev.touches[0];
+    lpStart = { x: t.clientX, y: t.clientY, card: card };
+    lpTimer = setTimeout(function () {
+      var start = lpStart;
+      lpTimer = null;
+      if (!start || start.card !== card || !card.isConnected) return;
+      var rec = recById(card.dataset.id);
+      if (!rec) return;
+      lpSuppressUntil = Date.now() + 900;
+      openCardMenu(rec);
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+  grid.addEventListener("touchmove", function (ev) {
+    if (!lpStart) return;
+    var t = ev.touches[0];
+    if (!t || Math.abs(t.clientX - lpStart.x) + Math.abs(t.clientY - lpStart.y) > 10) clearLongPress();
+  }, { passive: true });
+  grid.addEventListener("touchend", function (ev) {
+    clearLongPress();
+    // Lifting the finger after the menu opened must not also open the book.
+    if (Date.now() < lpSuppressUntil) ev.preventDefault();
+  }, { passive: false });
+  grid.addEventListener("touchcancel", clearLongPress, { passive: true });
+  grid.addEventListener("click", function (ev) {
+    if (Date.now() < lpSuppressUntil) { ev.preventDefault(); ev.stopPropagation(); }
+  }, true);
+  // Mouse / trackpad: right click opens the same menu.
+  grid.addEventListener("contextmenu", function (ev) {
+    var card = bookCardFrom(ev.target);
+    if (!card || selectMode) return;
+    ev.preventDefault();
+    var rec = recById(card.dataset.id);
+    if (rec && !cardMenu.classList.contains("open")) openCardMenu(rec);
   });
 
   // ---------------------------------------------------------------
@@ -4617,6 +5425,7 @@
   sheetBackdrop.addEventListener("click", closeSheet);
   sheetClose.addEventListener("click", closeSheet);
   document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && cardMenu.classList.contains("open")) { closeCardMenu(); return; }
     if (ev.key === "Escape" && pagelist.classList.contains("open")) { closePageList(); return; }
     if (ev.key === "Escape" && sheet.classList.contains("open")) closeSheet();
     if (ev.key === "Escape" && folderSheet.classList.contains("open")) closeFolderPick();
@@ -5246,9 +6055,11 @@
       // by import date until the first shuffle tick fired. Both only apply
       // when the "ランダムな順番で表示する" setting is on.
       if (settings.shuffleEnabled && covers.length > 1) covers = shuffle(covers);
+      coversLoaded = true;
       renderLibrary();
       migrateLegacyPdfData();
       if (settings.shuffleEnabled) startLibraryShuffle();
+      setTimeout(migrateThumbs, 1500);
     }).catch(function (err) {
       console.error("init failed" + (isRetry ? " (retry)" : ""), err);
       if (!isRetry) {
@@ -5284,6 +6095,41 @@
       }
     });
   }
+
+  // ---------------------------------------------------------------
+  // バージョン + オフライン起動. The GitHub Pages copy (the only one with a
+  // manifest link) registers sw.js, which keeps the app itself available
+  // without a connection. The Artifact copy (inside an iframe) never does.
+  // ---------------------------------------------------------------
+  var APP_VERSION = "v35";
+  var swState = "unsupported"; // unsupported | pending | missing | active
+  function offlineCapable() {
+    return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
+      (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
+  }
+  function syncOfflineStatus() {
+    $("app-version").textContent = APP_VERSION;
+    var el = $("offline-status");
+    if (swState === "unsupported") el.textContent = "オフライン起動: このページでは使えません（GitHub版で有効になります）";
+    else if (swState === "missing") el.textContent = "オフライン起動: 無効（sw.js がアップロードされていません）";
+    else if (navigator.serviceWorker && navigator.serviceWorker.controller) el.textContent = "オフライン起動: 有効（電波がなくても開けます）";
+    else el.textContent = "オフライン起動: 準備中（次回の起動から有効になります）";
+  }
+  if (offlineCapable()) {
+    swState = "pending";
+    try {
+      navigator.serviceWorker.register("sw.js").then(function () {
+        swState = "active";
+        syncOfflineStatus();
+      }, function (err) {
+        console.warn("sw.js を登録できませんでした", err);
+        swState = "missing";
+        syncOfflineStatus();
+      });
+      navigator.serviceWorker.addEventListener("controllerchange", syncOfflineStatus);
+    } catch (e) { swState = "missing"; }
+  }
+  syncOfflineStatus();
 
   init();
 })();
