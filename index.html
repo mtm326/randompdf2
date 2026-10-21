@@ -607,6 +607,28 @@
     padding-bottom: 18px;
   }
   .footer-bar-top .btn { max-width: none; width: 100%; padding-top: 15px; padding-bottom: 15px; font-size: 1rem; }
+  /* 前回の続き: one button per category under the random-display button */
+  .resume-row { width: 100%; display: flex; gap: 10px; }
+  .resume-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .resume-btn:active { transform: scale(0.98); }
+  .resume-btn img { width: 34px; height: 48px; object-fit: contain; border-radius: 4px; background: var(--border); flex: none; }
+  .rb-text { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+  .rb-label { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rb-name { font-size: 0.82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .library-toggle {
     appearance: none;
@@ -1462,7 +1484,7 @@
   .lib-search .segmented button { flex: 1; padding: 8px 4px; }
   .lib-search-note { font-size: 0.75rem; color: var(--text-muted); }
 
-  /* 読書状況: a pill (読了 / 読みかけ) and a thin progress bar on each cover. */
+  /* 読書状況: a pill (読了 / 読書中) and a thin progress bar on each cover. */
   .card .rstat {
     position: absolute;
     top: 6px; left: 6px;
@@ -1476,6 +1498,7 @@
     pointer-events: none;
   }
   .card .rstat.done { background: #2f9e6a; }
+  .card .rstat.reading { background: var(--accent); color: var(--accent-contrast); }
   .grid.selecting .card .rstat { display: none; }
   .card .prog {
     position: absolute;
@@ -1666,6 +1689,10 @@
         <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3.5 2.5v10l9-5-9-5z" fill="currentColor"/></svg>
         ランダム表示を開始
       </button>
+      <div class="resume-row" id="resume-row" hidden>
+        <button type="button" class="resume-btn" id="resume-manga" hidden><img alt=""><span class="rb-text"><span class="rb-label"></span><span class="rb-name"></span></span></button>
+        <button type="button" class="resume-btn" id="resume-doujin" hidden><img alt=""><span class="rb-text"><span class="rb-label"></span><span class="rb-name"></span></span></button>
+      </div>
     </div>
 
     <button class="library-toggle" id="library-toggle" aria-expanded="false">
@@ -1683,7 +1710,7 @@
         <div class="segmented" id="read-filter" role="group" aria-label="読書状況で絞り込む">
           <button type="button" data-v="all" aria-pressed="true">すべて</button>
           <button type="button" data-v="unread" aria-pressed="false">未読</button>
-          <button type="button" data-v="reading" aria-pressed="false">読みかけ</button>
+          <button type="button" data-v="reading" aria-pressed="false">読書中</button>
           <button type="button" data-v="done" aria-pressed="false">読了</button>
         </div>
         <div class="lib-search-note" id="lib-search-note" hidden></div>
@@ -2680,6 +2707,10 @@
       pill.textContent = "読了";
       card.appendChild(pill);
     } else if (st === "reading") {
+      var pill2 = document.createElement("div");
+      pill2.className = "rstat reading";
+      pill2.textContent = "読書中";
+      card.appendChild(pill2);
       if (c.pageCount > 1) {
         var bar = document.createElement("div");
         bar.className = "prog";
@@ -2687,11 +2718,6 @@
         fill.style.width = Math.max(4, Math.min(100, Math.round(c.lastPage / c.pageCount * 100))) + "%";
         bar.appendChild(fill);
         card.appendChild(bar);
-      } else {
-        var pill2 = document.createElement("div");
-        pill2.className = "rstat";
-        pill2.textContent = "読みかけ";
-        card.appendChild(pill2);
       }
     }
   }
@@ -2770,7 +2796,8 @@
     var cap = document.createElement("div");
     cap.className = "cap";
     var nDone = members.filter(function (m) { return readState(m) === "done"; }).length;
-    cap.textContent = folderName + "（" + members.length + "冊" + (nDone ? "・読了" + nDone : "") + "）";
+    var nReading = members.filter(function (m) { return readState(m) === "reading"; }).length;
+    cap.textContent = folderName + "（" + members.length + "冊" + (nReading ? "・読書中" + nReading : "") + (nDone ? "・読了" + nDone : "") + "）";
     card.appendChild(cap);
 
     card.appendChild(buildCheck());
@@ -2880,7 +2907,46 @@
   // volume (no random order, no rotating folder covers).
   function mangaFolders() { return curCat() === "manga"; }
 
+  // 前回の続き: the book last opened in each category (settings.lastOpened
+  // = { manga: id, doujin: id }). A book that was deleted or moved to the
+  // other category since then simply isn't offered.
+  var resumeRow = $("resume-row");
+  var resumeCatBtns = { manga: $("resume-manga"), doujin: $("resume-doujin") };
+  function lastOpenedRec(cat) {
+    var m = settings.lastOpened || {};
+    if (m[cat] === undefined || m[cat] === null) return null;
+    var r = recById(m[cat]);
+    return r && catOf(r) === cat ? r : null;
+  }
+  function renderResumeRow() {
+    var any = false;
+    Object.keys(resumeCatBtns).forEach(function (k) {
+      var b = resumeCatBtns[k], rec = lastOpenedRec(k);
+      b.hidden = !rec;
+      if (!rec) { b._rec = null; return; }
+      any = true;
+      if (b._rec !== rec) {
+        b._rec = rec;
+        var img = b.querySelector("img");
+        img.removeAttribute("src");
+        loadThumb(rec).then(function (url) { if (url && b._rec === rec) img.src = url; });
+      }
+      var where = rec.pageCount > 1 && rec.lastPage > 1 ? "（" + rec.lastPage + " / " + rec.pageCount + "）" : "";
+      b.querySelector(".rb-label").textContent = CAT_LABEL[k] + "の続き" + where;
+      b.querySelector(".rb-name").textContent = rec.name;
+      b.setAttribute("aria-label", CAT_LABEL[k] + "の前回の本を開く：" + rec.name);
+    });
+    resumeRow.hidden = !any;
+  }
+  Object.keys(resumeCatBtns).forEach(function (k) {
+    resumeCatBtns[k].addEventListener("click", function () {
+      var rec = lastOpenedRec(k);
+      if (rec) openViewer(rec);
+    });
+  });
+
   function renderLibrary() {
+    renderResumeRow();
     var has = covers.length > 0;
     var list = catCovers();
     viewEmpty.hidden = has;
@@ -4072,6 +4138,11 @@
 
   function openViewer(record) {
     viewerRecord = record;
+    var lo = {};
+    var prevLo = settings.lastOpened || {};
+    Object.keys(prevLo).forEach(function (k) { lo[k] = prevLo[k]; });
+    lo[catOf(record)] = record.id;
+    saveSetting("lastOpened", lo);
     viewerTitle.textContent = record.name;
     viewerPageLabel.textContent = "";
     viewerImg.style.display = "block";
@@ -5131,6 +5202,7 @@
     viewerRenderGen++;
     closeSlider();
     if (closedRecord) refreshCardReadState(closedRecord);
+    renderResumeRow();
   }
 
   viewerClose.addEventListener("click", closeViewer);
@@ -6101,7 +6173,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v35";
+  var APP_VERSION = "v36";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
