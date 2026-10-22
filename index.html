@@ -1328,6 +1328,31 @@
     line-height: 1.6;
   }
   .viewer-resume .btn { width: 100%; padding: 14px 18px; }
+  /* 続きから読む: the main choice, made larger and easier to hit */
+  #viewer-resume-continue { padding: 21px 18px; font-size: 1.12rem; }
+  /* ページの表示位置 (settings.pageAlign) */
+  .viewer.align-top .viewer-slot { align-items: flex-start; }
+  .viewer.align-bottom .viewer-slot { align-items: flex-end; }
+  .viewer.align-top .viewer-stage > img { top: calc(max(14px, env(safe-area-inset-top)) + 46px); max-height: calc(100% - max(14px, env(safe-area-inset-top)) - 46px); }
+  .viewer.align-bottom .viewer-stage > img { bottom: 0; max-height: calc(100% - max(14px, env(safe-area-inset-top)) - 46px); }
+  /* shown while an upward swipe has gone far enough to close */
+  .viewer-close-hint {
+    position: absolute;
+    left: 50%;
+    bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 4;
+    padding: 9px 16px;
+    border-radius: 20px;
+    background: rgba(0,0,0,0.72);
+    color: #fff;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  .viewer-close-hint.show { opacity: 1; }
   .viewer-next-row { display: flex; align-items: center; gap: 12px; color: #fff; font-size: 0.9rem; font-weight: 600; text-align: left; }
   .viewer-next-row img { width: 46px; height: 64px; object-fit: contain; border-radius: 4px; background: rgba(255,255,255,0.08); flex: none; }
   .viewer-next-row span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -1814,6 +1839,28 @@
   </div>
   <div class="field">
     <div class="field-row">
+      <span class="field-label">ページの表示位置</span>
+    </div>
+    <div class="segmented" role="group" aria-label="ページの表示位置">
+      <button type="button" id="align-top" aria-pressed="false">上寄せ</button>
+      <button type="button" id="align-center" aria-pressed="true">中央</button>
+      <button type="button" id="align-bottom" aria-pressed="false">下寄せ</button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">上スワイプで閉じる距離</span>
+    </div>
+    <div class="segmented" role="group" aria-label="上スワイプで閉じる距離">
+      <button type="button" id="close-swipe-short" aria-pressed="false">短め</button>
+      <button type="button" id="close-swipe-normal" aria-pressed="true">普通</button>
+      <button type="button" id="close-swipe-long" aria-pressed="false">長め</button>
+      <button type="button" id="close-swipe-off" aria-pressed="false">閉じない</button>
+    </div>
+    <div class="field-help">「閉じない」にした場合は、左上の×ボタンで閉じます。</div>
+  </div>
+  <div class="field">
+    <div class="field-row">
       <span class="field-label">見開き表示</span>
     </div>
     <div class="segmented" id="spread-toggle" role="group" aria-label="見開き表示">
@@ -2025,6 +2072,7 @@
       <div class="pagelist-grid" id="pagelist-grid"></div>
     </div>
   </div>
+  <div class="viewer-close-hint" id="viewer-close-hint" aria-hidden="true">指を離すと閉じます</div>
   <div class="viewer-resume" id="viewer-next" role="dialog" aria-label="次の巻">
     <p id="viewer-next-text">最後のページです</p>
     <div class="viewer-next-row"><img id="viewer-next-thumb" alt=""><span id="viewer-next-name"></span></div>
@@ -2488,7 +2536,7 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, keepAwake: true, lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, keepAwake: true, closeSwipe: "normal", pageAlign: "center", lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -3879,6 +3927,8 @@
     syncViewerOptsUI();
     syncLockUI();
     $("toggle-keep-awake").setAttribute("aria-checked", settings.keepAwake === false ? "false" : "true");
+    applyPageAlign();
+    syncCloseSwipeUI();
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
     Object.keys(librarySortBtns).forEach(function (k) {
@@ -4852,7 +4902,15 @@
   var AXIS_LOCK_PX = 6;
   var PAGE_COMMIT_RATIO = 0.14;
   var PAGE_COMMIT_MIN_PX = 34;
-  var CLOSE_SWIPE_PX = 70;
+  // How far an upward swipe must travel to close the viewer
+  // (settings.closeSwipe): a share of the screen height, or never.
+  var CLOSE_SWIPE_RATIO = { "short": 0.1, normal: 0.2, "long": 0.32 };
+  function closeSwipeThreshold() {
+    var r = CLOSE_SWIPE_RATIO[settings.closeSwipe || "normal"];
+    if (!r) return 0; // "off"
+    return Math.max(70, Math.round((window.innerHeight || 700) * r));
+  }
+  var viewerCloseHint = $("viewer-close-hint");
   // A quick flick commits the page turn even if the finger didn't travel
   // the full distance threshold -- matches how native page/photo swipers
   // feel, and is what makes short, fast real-world swipes register.
@@ -4925,6 +4983,9 @@
       if (dx > 0 && !canRevealLeftSlot()) dragDeltaPx = Math.pow(dx, 0.7);
       if (dx < 0 && !canRevealRightSlot()) dragDeltaPx = -Math.pow(-dx, 0.7);
       setTrackTransform(dragDeltaPx);
+    } else if (gestureState === GESTURE_VERT) {
+      var th = closeSwipeThreshold();
+      viewerCloseHint.classList.toggle("show", th > 0 && -dy >= th && Math.abs(dy) > Math.abs(dx) * 1.3);
     }
   }, { passive: false });
 
@@ -4949,13 +5010,19 @@
       if (touch) {
         var dy = touch.clientY - gestureStartY;
         var dx = touch.clientX - gestureStartX;
-        if (dy < -CLOSE_SWIPE_PX && Math.abs(dy) > Math.abs(dx) * 1.3) closeViewer();
+        var closeAt = closeSwipeThreshold();
+        if (closeAt > 0 && -dy >= closeAt && Math.abs(dy) > Math.abs(dx) * 1.3) closeViewer();
       }
     } else {
       handleViewerTap(ev.changedTouches && ev.changedTouches[0]);
     }
     gestureState = GESTURE_IDLE;
+    viewerCloseHint.classList.remove("show");
     lastViewerTouchEnd = Date.now();
+  }, { passive: true });
+  viewerTrack.addEventListener("touchcancel", function () {
+    gestureState = GESTURE_IDLE;
+    viewerCloseHint.classList.remove("show");
   }, { passive: true });
 
   // Mouse click fallback (desktop testing / trackpad use): tap-by-thirds.
@@ -5046,6 +5113,24 @@
   }
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden && viewer.classList.contains("open")) requestWakeLock();
+  });
+  var alignBtns = { top: $("align-top"), center: $("align-center"), bottom: $("align-bottom") };
+  var closeSwipeBtns = { "short": $("close-swipe-short"), normal: $("close-swipe-normal"), "long": $("close-swipe-long"), off: $("close-swipe-off") };
+  function applyPageAlign() {
+    var a = settings.pageAlign || "center";
+    viewer.classList.toggle("align-top", a === "top");
+    viewer.classList.toggle("align-bottom", a === "bottom");
+    Object.keys(alignBtns).forEach(function (k) { alignBtns[k].setAttribute("aria-pressed", a === k ? "true" : "false"); });
+  }
+  function syncCloseSwipeUI() {
+    var v = settings.closeSwipe || "normal";
+    Object.keys(closeSwipeBtns).forEach(function (k) { closeSwipeBtns[k].setAttribute("aria-pressed", v === k ? "true" : "false"); });
+  }
+  Object.keys(alignBtns).forEach(function (k) {
+    alignBtns[k].addEventListener("click", function () { saveSetting("pageAlign", k); applyPageAlign(); });
+  });
+  Object.keys(closeSwipeBtns).forEach(function (k) {
+    closeSwipeBtns[k].addEventListener("click", function () { saveSetting("closeSwipe", k); syncCloseSwipeUI(); });
   });
   var toggleKeepAwake = $("toggle-keep-awake");
   toggleKeepAwake.addEventListener("click", function () {
@@ -6182,7 +6267,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v38";
+  var APP_VERSION = "v39";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
