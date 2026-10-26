@@ -1902,7 +1902,7 @@
       <span class="field-label">横長のページを分割して表示</span>
       <button class="switch" id="toggle-split-wide" role="switch" aria-checked="true"></button>
     </div>
-    <div class="field-help">縦向きの画面で、横長のページ（2ページ分が1枚になったページなど）だけを半分ずつ順に表示します。右開きでは右半分から表示します。</div>
+    <div class="field-help">縦向きの画面で、横長のページ（2ページ分が1枚になったページなど）だけを半分ずつ順に表示します。右開きでは右半分から表示します。表紙（1ページ目）は分割しません。</div>
   </div>
   <div class="field">
     <div class="field-row">
@@ -4304,7 +4304,8 @@
     return settings.splitWide !== false && !viewerSpread && window.innerHeight > window.innerWidth;
   }
   function isWidePage(p) { var z = pageSizes.get(p); return !!z && z.w / z.h > 1.15; }
-  function isSplitPage(p) { return splitActive() && isWidePage(p); }
+  // The cover (page 1) is always shown whole.
+  function isSplitPage(p) { return p > 1 && splitActive() && isWidePage(p); }
   function ensureSizes(from, to) {
     var pdf = viewerPdf;
     if (!pdf) return Promise.resolve();
@@ -6489,7 +6490,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v41";
+  var APP_VERSION = "v42";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
