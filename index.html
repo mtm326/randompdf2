@@ -480,6 +480,24 @@
   .folder-card { order: 0; }
   .add-tile { order: 2; }
   .lib-more { order: 3; grid-column: 1 / -1; height: 1px; }
+  /* 同名のPDF tab */
+  .lib-tabs button { flex: 1; padding: 9px 8px; }
+  .tab-n { margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .dup-head {
+    order: 1; /* keeps its place among the cards (see .card order above) */
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 2px 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+  .dup-head .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dup-head .n { flex: none; font-weight: 400; font-size: 0.78rem; color: var(--text-muted); }
+  .dup-note { order: 0; grid-column: 1 / -1; font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; }
   /* no iOS "save image" callout / text selection on a held cover */
   .card, .card img { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
@@ -1728,6 +1746,10 @@
     </button>
 
     <div class="library-panel" id="library-panel">
+      <div class="segmented lib-tabs" id="lib-tabs" role="group" aria-label="表示の切り替え">
+        <button type="button" id="tab-library" aria-pressed="true">一覧</button>
+        <button type="button" id="tab-dups" aria-pressed="false">同名のPDF<span class="tab-n" id="tab-dups-n"></span></button>
+      </div>
       <div class="lib-search" id="lib-search">
         <div class="lib-search-row">
           <svg class="ico" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6"/><path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -1874,6 +1896,13 @@
       <span class="field-label">見開きで表紙（1ページ目）を単独にする</span>
       <button class="switch" id="toggle-cover-alone" role="switch" aria-checked="true"></button>
     </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">横長のページを分割して表示</span>
+      <button class="switch" id="toggle-split-wide" role="switch" aria-checked="true"></button>
+    </div>
+    <div class="field-help">縦向きの画面で、横長のページ（2ページ分が1枚になったページなど）だけを半分ずつ順に表示します。右開きでは右半分から表示します。</div>
   </div>
   <div class="field">
     <div class="field-row">
@@ -2075,8 +2104,9 @@
   <div class="viewer-close-hint" id="viewer-close-hint" aria-hidden="true">指を離すと閉じます</div>
   <div class="viewer-resume" id="viewer-next" role="dialog" aria-label="次の巻">
     <p id="viewer-next-text">最後のページです</p>
-    <div class="viewer-next-row"><img id="viewer-next-thumb" alt=""><span id="viewer-next-name"></span></div>
+    <div class="viewer-next-row" id="viewer-next-row"><img id="viewer-next-thumb" alt=""><span id="viewer-next-name"></span></div>
     <button class="btn btn-primary" id="viewer-next-open">次の巻を開く</button>
+    <button class="btn btn-copyname" id="viewer-next-folder">フォルダを開く</button>
     <button class="btn btn-copyname" id="viewer-next-stay">このまま</button>
   </div>
   <div class="viewer-slider" id="viewer-slider">
@@ -2536,7 +2566,7 @@
   // just the fast in-memory path for files picked during this session.
   var covers = [];
   var sessionPdfCache = new Map(); // id -> ArrayBuffer
-  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, keepAwake: true, closeSwipe: "normal", pageAlign: "center", lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
+  var settings = { interval: 30, count: 40, tiles: 9, caption: false, direction: "ltr", resumeMode: "ask", category: "doujin", privacyCover: true, shuffleMinutes: 5, shuffleEnabled: true, librarySort: "random", libraryViewMode: "flat", folderPreviewRotate: true, spreadMode: "auto", spreadCoverAlone: true, splitWide: true, keepAwake: true, closeSwipe: "normal", pageAlign: "center", lockEnabled: false, lockHash: "", lockSalt: "", lockWhen: "launch", lockFaceId: false, lockCredId: "", lockResetAt: 0 };
   // librarySort: "random" (shuffled, reshuffles on a timer) | "name" | "added".
   // shuffleEnabled is kept in lockstep with (librarySort === "random") for
   // the older code paths and stored settings that predate librarySort.
@@ -2779,7 +2809,7 @@
     if (card) applyReadState(card, c);
   }
 
-  function buildCard(c) {
+  function buildCard(c, capText) {
     var card = document.createElement("div");
     card.className = "card";
     card.dataset.id = String(c.id);
@@ -2794,7 +2824,7 @@
 
     var cap = document.createElement("div");
     cap.className = "cap";
-    cap.textContent = c.name;
+    cap.textContent = capText || c.name;
     card.appendChild(cap);
     applyReadState(card, c);
 
@@ -2937,8 +2967,43 @@
   var libViewKey = "";
   var libMoreObserver = null;
   var libSentinel = null;
+  // 同名のPDF: books whose names match (ignoring full/half-width, case and
+  // katakana/hiragana differences), across every category and folder.
+  var dupView = false;
+  var tabLibrary = $("tab-library");
+  var tabDups = $("tab-dups");
+  var tabDupsN = $("tab-dups-n");
+  function dupKey(name) { return normText(name).replace(/\s+/g, " ").trim(); }
+  function duplicateGroups() {
+    var map = new Map();
+    covers.forEach(function (c) {
+      var k = dupKey(c.name);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(c);
+    });
+    var groups = [];
+    map.forEach(function (g) { if (g.length > 1) groups.push(g); });
+    groups.forEach(function (g) {
+      g.sort(function (a, b) {
+        return catOf(a) !== catOf(b) ? (catOf(a) === "manga" ? -1 : 1) : byName(a.folder || "", b.folder || "") || coverByName(a, b);
+      });
+    });
+    groups.sort(function (a, b) { return coverByName(a[0], b[0]); });
+    return groups;
+  }
+  function dupCaption(c) { return CAT_LABEL[catOf(c)] + "・" + (c.folder || "フォルダなし"); }
+  function setDupView(v) {
+    if (dupView === v) return;
+    dupView = v;
+    currentFolderView = null;
+    if (selectMode) exitSelectMode(false);
+    renderLibrary();
+  }
+  tabLibrary.addEventListener("click", function () { setDupView(false); });
+  tabDups.addEventListener("click", function () { setDupView(true); });
+
   function libraryViewKey() {
-    return [curCat(), currentFolderView === null ? "" : "F:" + currentFolderView, settings.libraryViewMode,
+    return [dupView ? "DUP" : "", curCat(), currentFolderView === null ? "" : "F:" + currentFolderView, settings.libraryViewMode,
       settings.librarySort, favFilterActive ? 1 : 0, searchQuery, readFilter].join("|");
   }
   function appendLibItems(n) {
@@ -3010,7 +3075,7 @@
     viewLibrary.hidden = !has;
     headerCount.textContent = has ? list.length + "冊" : "";
     btnStart.disabled = list.length === 0;
-    btnClear.disabled = list.length === 0;
+    btnClear.disabled = list.length === 0 || dupView;
     libraryToggleLabel.textContent = "取り込み済みのPDFを見る（" + list.length + "冊）";
     renderCatSwitch();
 
@@ -3035,7 +3100,40 @@
     var items = [];
     function cardItem(c) { return function () { return buildCard(c); }; }
 
-    if (currentFolderView !== null) {
+    var dupGroups = duplicateGroups();
+    tabDupsN.textContent = dupGroups.length ? "（" + dupGroups.length + "組）" : "";
+    tabLibrary.setAttribute("aria-pressed", dupView ? "false" : "true");
+    tabDups.setAttribute("aria-pressed", dupView ? "true" : "false");
+    $("lib-search").hidden = dupView;
+
+    if (dupView) {
+      // --- 同名のPDF: every group of same-named books, all categories ---
+      folderBreadcrumb.hidden = true;
+      var note = document.createElement("p");
+      note.className = "dup-note";
+      note.textContent = dupGroups.length
+        ? "漫画・同人誌のすべての本から、同じ名前のPDFをまとめて表示しています（全角・半角や大文字・小文字の違いは同じとみなします）。表紙の下はその本の分類とフォルダです。長押しで削除などができます。"
+        : "同じ名前のPDFはありません（漫画・同人誌のすべての本が対象です）。";
+      frag.appendChild(note);
+      dupGroups.forEach(function (g) {
+        items.push(function () {
+          var h = document.createElement("div");
+          h.className = "dup-head";
+          var t = document.createElement("span");
+          t.className = "t";
+          t.textContent = g[0].name;
+          var n = document.createElement("span");
+          n.className = "n";
+          n.textContent = g.length + "冊";
+          h.appendChild(t);
+          h.appendChild(n);
+          return h;
+        });
+        // The caption says where each copy lives; a copy spelled differently
+        // (e.g. full-width) also shows its own spelling.
+        g.forEach(function (c) { items.push(function () { return buildCard(c, dupCaption(c) + (c.name !== g[0].name ? "・" + c.name : "")); }); });
+      });
+    } else if (currentFolderView !== null) {
       // --- Drilled into one folder: every PDF in it ---
       // Deliberately ignores the favourites filter: opening a folder from
       // the favourites view is how you get to the rest of that series.
@@ -3088,7 +3186,7 @@
 
     grid.innerHTML = "";
     grid.appendChild(frag);
-    appendAddTile(grid);
+    if (!dupView) appendAddTile(grid);
     libItems = items;
     libRendered = 0;
     var first = Math.max(keep, LIB_CHUNK);
@@ -3109,11 +3207,11 @@
       obs.observe(libSentinel);
     }
 
-    libSearchNote.hidden = !filtering || list.length === 0;
+    libSearchNote.hidden = dupView || !filtering || list.length === 0;
     if (filtering) libSearchNote.textContent = noteCount + "冊が該当";
     grid.classList.toggle("selecting", selectMode);
     if (selectMode) updateSelectBar();
-    if (folderMode && currentFolderView === null && settings.folderPreviewRotate) startFolderTileRotation();
+    if (!dupView && folderMode && currentFolderView === null && settings.folderPreviewRotate) startFolderTileRotation();
   }
 
   // ---------------------------------------------------------------
@@ -3246,6 +3344,7 @@
     if (selectMode) return; // never move cards around while the user is picking
     if (filtersActive()) return; // keep search / filter results still
     if (mangaFolders() && settings.libraryViewMode === "folder") return; // name order there
+    if (dupView) return;
     if (covers.length < 2) return;
     covers = shuffle(covers);
     renderLibrary();
@@ -3929,6 +4028,7 @@
     $("toggle-keep-awake").setAttribute("aria-checked", settings.keepAwake === false ? "false" : "true");
     applyPageAlign();
     syncCloseSwipeUI();
+    $("toggle-split-wide").setAttribute("aria-checked", settings.splitWide === false ? "false" : "true");
     shuffleMinutesRange.value = settings.shuffleMinutes;
     shuffleMinutesValue.textContent = settings.shuffleMinutes + "分";
     Object.keys(librarySortBtns).forEach(function (k) {
@@ -4190,9 +4290,59 @@
   function viewEnd(s) { var v = viewPages(s); return v.length ? v[v.length - 1] : s; }
   function nextViewStart(s) { return s + Math.max(1, viewPages(s).length); }
   function prevViewStart(s) { return s <= 1 ? 0 : viewStart(s - 1); }
+  // ---------------------------------------------------------------
+  // 横長ページの分割: on a portrait screen, one-page mode, a page that is
+  // clearly wider than tall is shown as two halves in turn (viewerHalf 1 =
+  // the half read first: left in left-to-right, right in right-to-left;
+  // 2 = the other half; 0 = the whole page). Page sizes are looked up as
+  // pages come near (ensureSizes) so neighbours are known before turning.
+  // ---------------------------------------------------------------
+  var viewerHalf = 0;
+  var pageSizes = new Map(); // page -> { w, h }
+  var sizeLoads = new Map();
+  function splitActive() {
+    return settings.splitWide !== false && !viewerSpread && window.innerHeight > window.innerWidth;
+  }
+  function isWidePage(p) { var z = pageSizes.get(p); return !!z && z.w / z.h > 1.15; }
+  function isSplitPage(p) { return splitActive() && isWidePage(p); }
+  function ensureSizes(from, to) {
+    var pdf = viewerPdf;
+    if (!pdf) return Promise.resolve();
+    var jobs = [];
+    for (var p = Math.max(1, from); p <= Math.min(viewerPageCount, to); p++) {
+      if (pageSizes.has(p)) continue;
+      if (sizeLoads.has(p)) { jobs.push(sizeLoads.get(p)); continue; }
+      (function (p) {
+        var job = pdf.getPage(p).then(function (pg) {
+          if (pdf !== viewerPdf) return;
+          var v = pg.getViewport({ scale: 1 });
+          pageSizes.set(p, { w: v.width, h: v.height });
+        }).catch(function () {}).then(function () { sizeLoads.delete(p); });
+        sizeLoads.set(p, job);
+        jobs.push(job);
+      })(p);
+    }
+    return Promise.all(jobs);
+  }
+  function normalizeHalf() {
+    if (!isSplitPage(viewerPageNum)) viewerHalf = 0;
+    else if (viewerHalf === 0) viewerHalf = 1;
+  }
+  // Positions are { p: view start page, h: half }.
+  function nextPos(p, h) {
+    if (h === 1) return { p: p, h: 2 };
+    var n = nextViewStart(p);
+    return { p: n, h: n <= viewerPageCount && isSplitPage(n) ? 1 : 0 };
+  }
+  function prevPos(p, h) {
+    if (h === 2) return { p: p, h: 1 };
+    var n = prevViewStart(p);
+    return { p: n, h: n >= 1 && isSplitPage(n) ? 2 : 0 };
+  }
   function pageLabelText() {
     var v = viewPages(viewerPageNum);
-    return (v.length === 2 ? v[0] + "-" + v[1] : viewerPageNum) + " / " + viewerPageCount;
+    var half = viewerHalf === 1 ? "前" : viewerHalf === 2 ? "後" : "";
+    return (v.length === 2 ? v[0] + "-" + v[1] : viewerPageNum + half) + " / " + viewerPageCount;
   }
 
   function openViewer(record) {
@@ -4216,6 +4366,7 @@
     syncViewerFavButton();
     viewerTrack.style.display = "none";
     viewerPageNum = 1;
+    viewerHalf = 0;
     viewer.classList.add("open");
     viewerReselect.classList.remove("show");
     viewerResume.classList.remove("show");
@@ -4261,6 +4412,9 @@
     window.pdfjsLib.getDocument({ data: buffer }).promise.then(function (pdf) {
       viewerPdf = pdf;
       viewerPageCount = pdf.numPages;
+      pageSizes.clear();
+      sizeLoads.clear();
+      viewerHalf = 0;
       viewerPagesBtn.disabled = false;
       canvasOrder = [viewerCanvasPrev, viewerCanvasCur, viewerCanvasNext];
       viewerSlotLeft.appendChild(viewerCanvasPrev);
@@ -4290,10 +4444,11 @@
   function startViewerAt(pageNum) {
     viewerResume.classList.remove("show");
     viewerPageNum = Math.max(1, Math.min(viewerPageCount, pageNum));
+    viewerHalf = 0;
     viewerImg.style.display = "none";
     viewerTrack.style.display = "flex";
+    rememberAfterSync = true;
     syncViewerTrack(true);
-    rememberPage();
   }
   viewerResumeContinue.addEventListener("click", function () {
     if (!viewerPdf) return;
@@ -4314,7 +4469,7 @@
     var changed = false;
     if (viewerRecord.lastPage !== viewerPageNum) { viewerRecord.lastPage = viewerPageNum; changed = true; }
     if (viewerRecord.pageCount !== viewerPageCount) { viewerRecord.pageCount = viewerPageCount; changed = true; }
-    if (!viewerRecord.finished && viewEnd(viewerPageNum) >= viewerPageCount) { viewerRecord.finished = true; changed = true; }
+    if (!viewerRecord.finished && viewEnd(viewerPageNum) >= viewerPageCount && viewerHalf !== 1) { viewerRecord.finished = true; changed = true; }
     if (!changed) return;
     clearTimeout(pageSaveTimer);
     var rec = viewerRecord;
@@ -4480,9 +4635,9 @@
 
   // _renderedPage holds a key for what the canvas shows (pages, layout
   // direction, slot size) so it's only redrawn when something changed.
-  function viewKey(start, w, h) {
+  function viewKey(start, w, h, half) {
     var v = viewPages(start);
-    return v.join("-") + (v.length === 2 && isRtl() ? "r" : "") + "@" + w + "x" + h;
+    return v.join("-") + (v.length === 2 && isRtl() ? "r" : "") + (half ? "h" + half + (isRtl() ? "r" : "") : "") + "@" + w + "x" + h;
   }
   function slotDims(slot) {
     return { w: (slot && slot.clientWidth) || window.innerWidth, h: (slot && slot.clientHeight) || window.innerHeight };
@@ -4490,12 +4645,34 @@
   // Draws one view (a page, or two facing pages at a common height) into
   // `canvas`, sized to fit w x h. alive() says whether the result is still
   // wanted; resolves true once the canvas holds the finished view.
-  function drawView(canvas, pages, w, h, alive) {
+  function drawView(canvas, pages, w, h, alive, half) {
     var pdf = viewerPdf;
     var dpr = window.devicePixelRatio || 1;
     var order = pages.length === 2 && isRtl() ? pages.slice().reverse() : pages;
     return Promise.all(order.map(function (p) { return pdf.getPage(p); })).then(function (pgs) {
       if (!alive()) return false;
+      if (pgs.length === 1 && half) {
+        // One half of a wide page: render the page so that half fits, then
+        // keep only that half.
+        var hp = pgs[0];
+        var hb = hp.getViewport({ scale: 1 });
+        var hs = Math.min(w / (hb.width / 2), h / hb.height) * dpr;
+        if (!isFinite(hs) || hs <= 0) hs = 1;
+        var hv = hp.getViewport({ scale: hs });
+        var full = document.createElement("canvas");
+        full.width = Math.round(hv.width);
+        full.height = Math.round(hv.height);
+        return hp.render({ canvasContext: full.getContext("2d"), viewport: hv }).promise.then(function () {
+          if (!alive()) { full.width = 0; full.height = 0; return false; }
+          var halfW = Math.round(full.width / 2);
+          var takeLeft = (half === 1) !== isRtl();
+          canvas.width = halfW;
+          canvas.height = full.height;
+          canvas.getContext("2d").drawImage(full, takeLeft ? 0 : full.width - halfW, 0, halfW, full.height, 0, 0, halfW, full.height);
+          full.width = 0; full.height = 0;
+          return true;
+        });
+      }
       if (pgs.length === 1) {
         var page = pgs[0];
         var base = page.getViewport({ scale: 1 });
@@ -4544,8 +4721,10 @@
       });
     });
   }
-  function renderPageIntoCanvas(canvas, start, gen) {
+  function renderPageIntoCanvas(canvas, pos, gen) {
+    var start = pos.p, half = pos.h || 0;
     var pages = viewPages(start);
+    if (pages.length !== 1) half = 0;
     if (!viewerPdf || !pages.length) {
       canvas._renderedPage = "none";
       canvas.width = 2;
@@ -4553,7 +4732,7 @@
       return Promise.resolve();
     }
     var d = slotDims(canvas.parentElement);
-    var key = viewKey(start, d.w, d.h);
+    var key = viewKey(start, d.w, d.h, half);
     if (canvas._renderedPage === key) return Promise.resolve(); // already correct
     var ready = takePrefetched(key);
     if (ready) {
@@ -4563,7 +4742,7 @@
       canvas._renderedPage = key;
       return Promise.resolve();
     }
-    return drawView(canvas, pages, d.w, d.h, function () { return gen === viewerRenderGen; }).then(function (ok) {
+    return drawView(canvas, pages, d.w, d.h, function () { return gen === viewerRenderGen; }, half).then(function (ok) {
       if (ok) canvas._renderedPage = key;
     }).catch(function (err) {
       console.error("ページ描画エラー", pages, err);
@@ -4613,15 +4792,17 @@
   function runPrefetch() {
     if (pfBusy || !viewerPdf || !viewer.classList.contains("open") || viewerTrack.style.display === "none") return;
     var d = slotDims(viewerSlotMid);
-    var s = nextViewStart(viewerPageNum); // already in a slot
+    var pos = nextPos(viewerPageNum, viewerHalf); // already in a slot
     for (var k = 0; k < PF_AHEAD; k++) {
-      s = nextViewStart(s);
-      if (s > viewerPageCount) return;
-      var key = viewKey(s, d.w, d.h);
+      pos = nextPos(pos.p, pos.h);
+      if (pos.p > viewerPageCount) return;
+      var pages = viewPages(pos.p);
+      var half = pages.length === 1 ? pos.h : 0;
+      var key = viewKey(pos.p, d.w, d.h, half);
       if (pfCache.has(key)) continue;
       var gen = pfGen, pdf = viewerPdf, canvas = document.createElement("canvas");
       pfBusy = true;
-      drawView(canvas, viewPages(s), d.w, d.h, function () { return gen === pfGen && pdf === viewerPdf; }).then(function (ok) {
+      drawView(canvas, pages, d.w, d.h, function () { return gen === pfGen && pdf === viewerPdf; }, half).then(function (ok) {
         if (gen !== pfGen) { canvas.width = 0; canvas.height = 0; return; }
         pfBusy = false;
         if (ok) { storePrefetched(key, canvas); schedulePrefetch(); }
@@ -4642,10 +4823,11 @@
   // the left slot) is how you advance when reading right-to-left.
   function renderAllSlots() {
     var gen = ++viewerRenderGen;
-    var prev = prevViewStart(viewerPageNum), next = nextViewStart(viewerPageNum);
+    var cur = { p: viewerPageNum, h: viewerHalf };
+    var prev = prevPos(cur.p, cur.h), next = nextPos(cur.p, cur.h);
     var targets = isRtl()
-      ? [next, viewerPageNum, prev]
-      : [prev, viewerPageNum, next];
+      ? [next, cur, prev]
+      : [prev, cur, next];
     return Promise.all(canvasOrder.map(function (canvas, i) {
       return renderPageIntoCanvas(canvas, targets[i], gen);
     }));
@@ -4654,12 +4836,10 @@
   // Whether the slot revealed by dragging/tapping toward that side actually
   // has a valid page in it right now (used to gate commits and to decide
   // when to rubber-band instead of following the finger).
-  function canRevealLeftSlot() {
-    return isRtl() ? nextViewStart(viewerPageNum) <= viewerPageCount : viewerPageNum > 1;
-  }
-  function canRevealRightSlot() {
-    return isRtl() ? viewerPageNum > 1 : nextViewStart(viewerPageNum) <= viewerPageCount;
-  }
+  function hasNextPos() { return nextPos(viewerPageNum, viewerHalf).p <= viewerPageCount; }
+  function hasPrevPos() { return prevPos(viewerPageNum, viewerHalf).p >= 1; }
+  function canRevealLeftSlot() { return isRtl() ? hasNextPos() : hasPrevPos(); }
+  function canRevealRightSlot() { return isRtl() ? hasPrevPos() : hasNextPos(); }
 
   function updateViewerStageWidth() {
     viewerStageWidth = viewerTrack.parentElement.clientWidth || window.innerWidth;
@@ -4671,18 +4851,28 @@
 
   // Used for the very first page of a freshly opened PDF, and after a
   // resize — every slot's content is suspect, so (re)render all three.
+  var rememberAfterSync = false;
   function syncViewerTrack(showSpinner) {
     viewerSpread = spreadOn();
     viewerPageNum = viewStart(Math.max(1, Math.min(viewerPageCount, viewerPageNum)));
     updateViewerStageWidth();
     viewerTrack.style.transition = "none";
     setTrackTransform(0);
-    viewerPageLabel.textContent = pageLabelText();
-    if (pagelist.classList.contains("open")) syncPageListState();
     if (showSpinner) viewerSpinner.classList.add("show");
-    renderAllSlots().then(function () {
-      if (showSpinner) viewerSpinner.classList.remove("show");
-      schedulePrefetch();
+    var pdfAtStart = viewerPdf;
+    // Sizes of this page and its neighbours decide whether they're split.
+    ensureSizes(viewerPageNum - 2, viewerPageNum + 3).then(function () {
+      if (viewerPdf !== pdfAtStart || !viewerPdf) return;
+      normalizeHalf();
+      viewerPageLabel.textContent = pageLabelText();
+      if (pagelist.classList.contains("open")) syncPageListState();
+      // Saved only now, once it's known whether this page is shown in halves
+      // (so landing on the first half of a wide last page isn't 読了 yet).
+      if (rememberAfterSync) { rememberAfterSync = false; rememberPage(); }
+      return renderAllSlots().then(function () {
+        if (showSpinner) viewerSpinner.classList.remove("show");
+        schedulePrefetch();
+      });
     });
   }
 
@@ -4721,11 +4911,19 @@
       rotateCanvases(dir);
       var revealedRight = dir === -1;
       var advance = isRtl() ? !revealedRight : revealedRight;
-      viewerPageNum = advance ? nextViewStart(viewerPageNum) : prevViewStart(viewerPageNum);
+      var np = advance ? nextPos(viewerPageNum, viewerHalf) : prevPos(viewerPageNum, viewerHalf);
+      viewerPageNum = np.p;
+      viewerHalf = np.h;
       viewerPageLabel.textContent = pageLabelText();
       rememberPage();
       setTrackTransform(0);
-      renderAllSlots().then(schedulePrefetch); // only the newly-exposed lookahead slot redraws (often from the 先読み)
+      // Know the neighbours' sizes before filling their slots (only the
+      // newly-exposed lookahead slot redraws, often from the 先読み).
+      var pdfNow = viewerPdf;
+      ensureSizes(viewerPageNum - 2, viewerPageNum + 3).then(function () {
+        if (viewerPdf !== pdfNow) return;
+        return renderAllSlots().then(schedulePrefetch);
+      });
       if (sliderOpen) setSliderVisual(viewerPageNum);
     });
   }
@@ -4799,10 +4997,11 @@
 
   function jumpToPage(pageNum) {
     pageNum = Math.max(1, Math.min(viewerPageCount, pageNum));
-    if (viewStart(pageNum) === viewerPageNum && viewerSpread === spreadOn()) return;
+    if (viewStart(pageNum) === viewerPageNum && viewerSpread === spreadOn() && viewerHalf <= 1) return;
     viewerPageNum = pageNum;
+    viewerHalf = 0;
+    rememberAfterSync = true;
     syncViewerTrack(false);
-    rememberPage();
   }
 
   // Renders the target page small, into its own dedicated canvas -- never
@@ -5045,7 +5244,7 @@
   var viewerNextOpen = $("viewer-next-open");
   var viewerNextStay = $("viewer-next-stay");
   var nextVolume = null;
-  function atLastView() { return !!viewerPdf && nextViewStart(viewerPageNum) > viewerPageCount; }
+  function atLastView() { return !!viewerPdf && nextPos(viewerPageNum, viewerHalf).p > viewerPageCount; }
   function nextVolumeOf(rec) {
     if (!rec || !rec.folder) return null;
     var list = covers.filter(function (c) { return c.folder === rec.folder; }).sort(coverByName);
@@ -5053,15 +5252,26 @@
     for (var k = 0; k < list.length; k++) { if (list[k] === rec || list[k].id === rec.id) { i = k; break; } }
     return i >= 0 && i < list.length - 1 ? list[i + 1] : null;
   }
+  // Shown for any book that lives in a folder: 次の巻を開く (when there is
+  // one), フォルダを開く, このまま.
+  var viewerNextRow = $("viewer-next-row");
+  var viewerNextFolder = $("viewer-next-folder");
   function offerNextVolume() {
-    var next = nextVolumeOf(viewerRecord);
-    if (!next) return false;
+    var rec = viewerRecord;
+    if (!rec || !rec.folder) return false;
+    var next = nextVolumeOf(rec);
     nextVolume = next;
     closeSlider();
-    viewerNextText.textContent = "最後のページです。次の巻を開きますか？";
-    viewerNextName.textContent = next.name;
-    viewerNextThumb.removeAttribute("src");
-    loadThumb(next).then(function (url) { if (url && nextVolume === next) viewerNextThumb.src = url; });
+    viewerNextRow.hidden = !next;
+    viewerNextOpen.hidden = !next;
+    if (next) {
+      viewerNextText.textContent = "最後のページです。次の巻を開きますか？";
+      viewerNextName.textContent = next.name;
+      viewerNextThumb.removeAttribute("src");
+      loadThumb(next).then(function (url) { if (url && nextVolume === next) viewerNextThumb.src = url; });
+    } else {
+      viewerNextText.textContent = "最後のページです。このフォルダの最後の本です。";
+    }
     viewerNext.classList.add("show");
     return true;
   }
@@ -5070,6 +5280,11 @@
     nextVolume = null;
   }
   viewerNextStay.addEventListener("click", hideNextPrompt);
+  viewerNextFolder.addEventListener("click", function () {
+    var rec = viewerRecord;
+    hideNextPrompt();
+    if (rec && rec.folder && covers.indexOf(rec) !== -1) openFolderInLibrary(rec.folder, rec);
+  });
   viewerNextOpen.addEventListener("click", function () {
     var next = nextVolume;
     hideNextPrompt();
@@ -5310,6 +5525,7 @@
     if (wall.classList.contains("open")) stopWall();
     if (selectMode) exitSelectMode(false);
     if (book && catOf(book) !== curCat()) saveSetting("category", catOf(book));
+    dupView = false;
     clearLibFilters();
     currentFolderView = folder;
     if (!libraryPanel.classList.contains("open")) {
@@ -5731,6 +5947,12 @@
     spreadBtns[k].addEventListener("click", function () { setSpreadMode(k); });
   });
   toggleCoverAlone.addEventListener("click", function () { setCoverAlone(!coverAlone()); });
+  var toggleSplitWide = $("toggle-split-wide");
+  toggleSplitWide.addEventListener("click", function () {
+    saveSetting("splitWide", settings.splitWide === false);
+    toggleSplitWide.setAttribute("aria-checked", settings.splitWide === false ? "false" : "true");
+    resyncOpenViewer();
+  });
   directionLtrBtn.addEventListener("click", function () { setDirection("ltr"); });
   togglePrivacy.addEventListener("click", function () {
     var v = togglePrivacy.getAttribute("aria-checked") !== "true";
@@ -6267,7 +6489,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v39";
+  var APP_VERSION = "v41";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
