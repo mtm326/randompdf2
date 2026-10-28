@@ -379,7 +379,7 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     box-shadow: 0 6px 16px -10px var(--shadow);
-    animation: cardIn 0.35s ease both;
+    animation: cardIn 0.35s ease backwards;
   }
   @keyframes cardIn {
     from { opacity: 0; transform: translateY(6px) scale(0.97); }
@@ -414,7 +414,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(2px);
   }
   .card .fav svg { width: 13px; height: 13px; }
   .card .fav.active { color: #ffcb45; }
@@ -480,6 +479,15 @@
   .folder-card { order: 0; }
   .add-tile { order: 2; }
   .lib-more { order: 3; grid-column: 1 / -1; height: 1px; }
+  /* Nothing in the app is meant to be selected: a long press or quick
+     double tap used to select the page (painting the screen blue). Text
+     fields stay selectable. */
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+  .viewer, .viewer * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; -webkit-tap-highlight-color: transparent; }
+  .viewer { touch-action: manipulation; }
+  /* covers added while scrolling appear without the entrance animation */
+  .card.no-anim { animation: none; }
   /* 同名のPDF tab */
   .lib-tabs button { flex: 1; padding: 9px 8px; }
   .tab-n { margin-left: 4px; font-variant-numeric: tabular-nums; }
@@ -1098,8 +1106,7 @@
     position: absolute;
     width: 28px; height: 28px;
     border-radius: 50%;
-    background: rgba(10,10,14,0.55);
-    backdrop-filter: blur(2px);
+    background: rgba(10,10,14,0.6);
   }
   .wall-fav svg { position: relative; width: 15px; height: 15px; color: #fff; }
   .wall-fav.active svg { color: #ffcb45; }
@@ -2545,8 +2552,19 @@
       });
     }, { rootMargin: "900px 0px" }) : null;
   }
+  var thumbApplyQueue = [], thumbApplyRaf = 0;
   function fillThumb(img, c) {
-    loadThumb(c).then(function (url) { if (url && img._cover === c) img.src = url; });
+    loadThumb(c).then(function (url) {
+      if (!url || img._cover !== c) return;
+      thumbApplyQueue.push([img, c, url]);
+      if (!thumbApplyRaf) thumbApplyRaf = requestAnimationFrame(applyThumbs);
+    });
+  }
+  function applyThumbs() {
+    thumbApplyRaf = 0;
+    var batch = thumbApplyQueue.splice(0, 8);
+    batch.forEach(function (b) { if (b[0]._cover === b[1]) b[0].src = b[2]; });
+    if (thumbApplyQueue.length) thumbApplyRaf = requestAnimationFrame(applyThumbs);
   }
   function attachThumb(img, c) {
     img._cover = c;
@@ -3006,10 +3024,31 @@
     return [dupView ? "DUP" : "", curCat(), currentFolderView === null ? "" : "F:" + currentFolderView, settings.libraryViewMode,
       settings.librarySort, favFilterActive ? 1 : 0, searchQuery, readFilter].join("|");
   }
-  function appendLibItems(n) {
+  // Later chunks are built a few cards per animation frame, so scrolling
+  // never waits for a big batch of DOM work.
+  var libAppendPending = 0, libAppendRaf = 0;
+  function appendLibItemsSoon(n) {
+    libAppendPending += n;
+    if (libAppendRaf) return;
+    var step = function () {
+      libAppendRaf = 0;
+      if (!libSentinel) { libAppendPending = 0; return; }
+      var k = Math.min(12, libAppendPending);
+      libAppendPending -= k;
+      appendLibItems(k, true);
+      if (libAppendPending > 0 && libSentinel) libAppendRaf = requestAnimationFrame(step);
+      else if (libSentinel && libMoreObserver) { libMoreObserver.unobserve(libSentinel); libMoreObserver.observe(libSentinel); }
+    };
+    libAppendRaf = requestAnimationFrame(step);
+  }
+  function appendLibItems(n, quiet) {
     var frag = document.createDocumentFragment();
     var end = Math.min(libItems.length, libRendered + n);
-    for (var i = libRendered; i < end; i++) frag.appendChild(libItems[i]());
+    for (var i = libRendered; i < end; i++) {
+      var el = libItems[i]();
+      if (quiet && el.classList) el.classList.add("no-anim");
+      frag.appendChild(el);
+    }
     libRendered = end;
     if (libSentinel && libSentinel.parentNode === grid) grid.insertBefore(frag, libSentinel); else grid.appendChild(frag);
     if (libRendered >= libItems.length && libSentinel) {
@@ -3093,6 +3132,8 @@
     stopFolderTileRotation(); // clears folderTiles too; rebuilt below if needed
     if (libMoreObserver) { libMoreObserver.disconnect(); libMoreObserver = null; }
     libSentinel = null;
+    if (libAppendRaf) { cancelAnimationFrame(libAppendRaf); libAppendRaf = 0; }
+    libAppendPending = 0;
     resetThumbObserver();
 
     // Messages go straight in; covers become builders appended in chunks.
@@ -3199,9 +3240,10 @@
     if (libSentinel) {
       var obs = new IntersectionObserver(function (entries) {
         if (!entries.some(function (e) { return e.isIntersecting; })) return;
-        appendLibItems(LIB_CHUNK);
-        // Re-observe so a sentinel that is still in range fires again.
-        if (libSentinel && libMoreObserver === obs) { obs.unobserve(libSentinel); obs.observe(libSentinel); }
+        if (libMoreObserver !== obs) return;
+        // Built gradually; re-observed when done so a sentinel that is
+        // still in range fires again.
+        appendLibItemsSoon(LIB_CHUNK);
       }, { rootMargin: "1500px 0px" });
       libMoreObserver = obs;
       obs.observe(libSentinel);
@@ -3331,8 +3373,12 @@
   var libraryShuffleTimer = null;
   var libraryGridTouchActive = false;
 
+  var lastPageScrollAt = 0;
+  window.addEventListener("scroll", function () { lastPageScrollAt = Date.now(); }, { passive: true });
+  function scrolledRecently() { return Date.now() - lastPageScrollAt < 2000; }
   function libraryShuffleTick() {
     if (!settings.shuffleEnabled) return;
+    if (scrolledRecently()) return;
     if (document.hidden) return;
     if (!libraryPanel.classList.contains("open")) return;
     if (wall.classList.contains("open") || viewer.classList.contains("open")) return;
@@ -3402,6 +3448,7 @@
   }
   function folderTileTick() {
     if (document.hidden) return;
+    if (scrolledRecently()) return;
     var now = performance.now();
     if (!libraryPanel.classList.contains("open")) {
       // Collapsed -> nobody would see a swap, so skip the image decode. Push
@@ -3456,8 +3503,75 @@
   // A PDF's identity in the library is its folder + file name, so
   // "AuthorA/01.pdf" and "AuthorB/01.pdf" are two different books, while
   // re-picking the same folder skips everything already imported.
-  function coverKey(folder, name) { return (folder || "") + "\u0000" + name; }
-  function fileKey(f) { return coverKey(folderFromFile(f), fileBaseName(f.name)); }
+  // Names are compared loosely: Unicode-normalized (NFKC folds the
+  // decomposed "が" macOS/Files can hand over, and full/half-width),
+  // case-insensitive, spaces collapsed. A folder also counts as the same
+  // folder when it was picked from a different level ("作者/シリーズ" and
+  // "シリーズ"), so re-importing it only adds PDFs that aren't in it yet.
+  function idText(s) {
+    s = String(s || "");
+    try { s = s.normalize("NFKC"); } catch (e) {}
+    return s.toLowerCase().replace(/\s+/g, " ").trim();
+  }
+  function folderSegs(folder) {
+    return folder ? idText(folder).split("/").map(function (x) { return x.trim(); }).filter(Boolean) : [];
+  }
+  function sameFolder(a, b) {
+    var x = folderSegs(a), y = folderSegs(b);
+    if (!x.length || !y.length) return x.length === y.length;
+    var shorter = x.length <= y.length ? x : y, longer = x.length <= y.length ? y : x;
+    var off = longer.length - shorter.length;
+    for (var i = 0; i < shorter.length; i++) if (longer[off + i] !== shorter[i]) return false;
+    return true;
+  }
+  function coverKey(folder, name) { return folderSegs(folder).join("/") + "\u0000" + idText(name); }
+  function fileKey(f) { return coverKey(folderFromFile(f) || pickRoot(f), fileBaseName(f.name)); }
+  // Name of the folder that was picked itself (empty for single files).
+  // PDFs sitting directly in it have no folder of their own, but they still
+  // belong to that folder for duplicate checks.
+  function pickRoot(file) {
+    var parts = String(file.webkitRelativePath || "").split("/");
+    return parts.length > 1 ? parts[0] : "";
+  }
+  // Lookup of existing books by (loose) name.
+  function makeBookIndex(list) {
+    var byName = new Map();
+    list.forEach(function (c) {
+      var k = idText(c.name);
+      if (!byName.has(k)) byName.set(k, []);
+      byName.get(k).push(c);
+    });
+    function named(name) { return byName.get(idText(name)) || []; }
+    return {
+      // the same book in the same folder
+      inFolder: function (folder, name) {
+        var arr = named(name);
+        for (var i = 0; i < arr.length; i++) if (arr[i].folder && sameFolder(arr[i].folder, folder)) return arr[i];
+        return null;
+      },
+      // any book of that name (for PDFs picked one at a time)
+      anyNamed: function (name, skip) {
+        var arr = named(name);
+        for (var i = 0; i < arr.length; i++) if (!skip || !skip(arr[i])) return arr[i];
+        return null;
+      },
+      // a same-named book that has no folder yet
+      unfiledNamed: function (name, skip) {
+        var arr = named(name);
+        for (var i = 0; i < arr.length; i++) if (!arr[i].folder && (!skip || !skip(arr[i]))) return arr[i];
+        return null;
+      }
+    };
+  }
+  // Is this picked file already in the library?
+  function bookForFile(f, index) {
+    var name = fileBaseName(f.name), folder = folderFromFile(f);
+    index = index || makeBookIndex(covers);
+    if (folder) return index.inFolder(folder, name) || index.unfiledNamed(name);
+    var root = pickRoot(f);
+    if (root) return index.inFolder(root, name) || index.unfiledNamed(name);
+    return index.anyNamed(name);
+  }
 
   function folderFromFile(file) {
     var rel = file.webkitRelativePath || "";
@@ -3535,12 +3649,8 @@
     });
     if (files.length === 0) return;
 
-    var existingByKey = {};    // folder + name -> cover
-    var existingByName = {};   // name -> [covers]
-    covers.forEach(function (c) {
-      existingByKey[coverKey(c.folder, c.name)] = c;
-      (existingByName[c.name] = existingByName[c.name] || []).push(c);
-    });
+    var index = makeBookIndex(covers);
+    function isClaimed(c) { return !!claimed[c.id]; }
 
     var toAdd = [];
     var matched = []; // [cover, file] pairs for PDFs already in the library
@@ -3550,20 +3660,23 @@
     files.forEach(function (f) {
       var name = fileBaseName(f.name);
       var folder = folderFromFile(f);
-      var key = coverKey(folder, name);
-      var existing = existingByKey[key];
-      if (!existing) {
-        var sameName = (existingByName[name] || []).filter(function (c) { return !claimed[c.id]; });
+      var key = fileKey(f);
+      var root = folder ? "" : pickRoot(f);
+      // Same name in the same folder (also when that folder was picked from
+      // another level, or picked itself): already in the library.
+      var existing = folder ? index.inFolder(folder, name)
+        : root ? (index.inFolder(root, name) || index.unfiledNamed(name, isClaimed)) : null;
+      if (!existing && !root) {
         if (!folder) {
           // Picked one file at a time (no folder info): any book of that
           // name already in the library counts as the same book.
-          existing = sameName[0];
+          existing = index.anyNamed(name, isClaimed);
         } else {
           // From a folder: a same-named book that was added one file at a
           // time (so it has no folder yet) is the same book -- adopt it into
           // this folder instead of importing a second copy. Same-named books
           // that already belong to another folder are left alone.
-          existing = sameName.filter(function (c) { return !c.folder; })[0];
+          existing = index.unfiledNamed(name, isClaimed);
           if (existing) {
             existing.folder = folder;
             folderChanged = true;
@@ -3616,7 +3729,33 @@
     var queuedKeys = {};
     importQueue.forEach(function (f) { queuedKeys[fileKey(f)] = true; });
     toAdd = toAdd.filter(function (f) { return !queuedKeys[fileKey(f)]; });
-    toAdd.forEach(function (f) { f._cat = dest; });
+    // New books join the folder as it is already named in the library when
+    // the same folder was picked from another level ("シリーズ" vs
+    // "作者/シリーズ"), so they don't show up as a second folder.
+    var folderNames = {};
+    covers.forEach(function (c) { if (c.folder) folderNames[c.folder] = true; });
+    var aliasCache = {};
+    function libraryFolderFor(folder) {
+      if (!folder) return folder;
+      if (aliasCache.hasOwnProperty(folder)) return aliasCache[folder];
+      var hits = Object.keys(folderNames).filter(function (f) { return sameFolder(f, folder); });
+      var exact = hits.filter(function (f) { return folderSegs(f).join("/") === folderSegs(folder).join("/"); });
+      var out = exact.length ? exact[0] : hits.length === 1 ? hits[0] : folder;
+      aliasCache[folder] = out;
+      return out;
+    }
+    // PDFs directly inside the picked folder join that folder only when the
+    // library already has it (otherwise they stay unfiled, as before).
+    function rootFolderFor(root) {
+      if (!root) return "";
+      var out = libraryFolderFor(root);
+      return folderNames[out] ? out : "";
+    }
+    toAdd.forEach(function (f) {
+      var fo = folderFromFile(f);
+      f._cat = dest;
+      f._folder = fo ? libraryFolderFor(fo) : rootFolderFor(pickRoot(f));
+    });
     enqueueImport(toAdd);
   }
 
@@ -3687,8 +3826,7 @@
     // skip it entirely. (The old check ran *after* the record was already
     // written, so the duplicate stayed in the database and reappeared on
     // the next launch.)
-    var k = fileKey(file);
-    if (covers.some(function (c) { return coverKey(c.folder, c.name) === k; })) {
+    if (bookForFile(file)) {
       importDone++;
       updateImportBar();
       advanceImport();
@@ -3697,7 +3835,7 @@
     materialize(file)
       .then(function (buf) { return renderPdfCoverToDataUrl(buf); })
       .then(function (dataUrl) {
-        var record = { name: fileBaseName(file.name), addedAt: Date.now(), folder: folderFromFile(file), category: file._cat || curCat(), thumbLen: Math.round(dataUrl.length * 0.75) };
+        var record = { name: fileBaseName(file.name), addedAt: Date.now(), folder: typeof file._folder === "string" ? file._folder : folderFromFile(file), category: file._cat || curCat(), thumbLen: Math.round(dataUrl.length * 0.75) };
         return idbPut("covers", record).then(function (newId) {
           record.id = newId;
           cacheThumb(newId, dataUrl);
@@ -3767,19 +3905,13 @@
   // without a folder matches any book of that name; a folder file also
   // matches a same-named book that has no folder yet.
   function newBookCounter() {
-    var byKey = {}, byName = {}, byNameNoFolder = {};
-    covers.forEach(function (c) {
-      byKey[coverKey(c.folder, c.name)] = true;
-      byName[c.name] = true;
-      if (!c.folder) byNameNoFolder[c.name] = true;
-    });
+    var index = makeBookIndex(covers);
     var seen = {};
     return function (files) {
       var n = 0;
       files.forEach(function (f) {
-        var name = fileBaseName(f.name), folder = folderFromFile(f), key = coverKey(folder, name);
-        if (byKey[key] || seen[key]) return;
-        if (folder ? byNameNoFolder[name] : byName[name]) return;
+        var key = fileKey(f);
+        if (seen[key] || bookForFile(f, index)) return;
         seen[key] = true;
         n++;
       });
@@ -4373,6 +4505,7 @@
     viewerResume.classList.remove("show");
     viewerOpenFolder.hidden = !record.folder;
     viewerPagesBtn.disabled = true;
+    clearViewerSelection();
     teardownPageList();
     hideNextPrompt();
     clearPrefetch();
@@ -4569,8 +4702,7 @@
     var files = Array.prototype.slice.call(ev.target.files || []);
     if (files.length === 0) return;
 
-    var byKey = {}, byName = {};
-    covers.forEach(function (c) { byKey[coverKey(c.folder, c.name)] = c; if (!byName[c.name]) byName[c.name] = c; });
+    var reIndex = makeBookIndex(covers);
 
     // Just caching the File reference for every match is instant (no bytes
     // are read yet), so this works the same whether the folder has a
@@ -4579,7 +4711,7 @@
     var toBackfill = [];
     files.forEach(function (f) {
       if (!(f.type === "application/pdf" || /\.pdf$/i.test(f.name))) return;
-      var cover = byKey[fileKey(f)] || byName[fileBaseName(f.name)];
+      var cover = (folderFromFile(f) && reIndex.inFolder(folderFromFile(f), fileBaseName(f.name))) || reIndex.anyNamed(fileBaseName(f.name));
       if (cover) {
         sessionPdfCache.set(cover.id, f);
         matchCount++;
@@ -4646,7 +4778,8 @@
   // Draws one view (a page, or two facing pages at a common height) into
   // `canvas`, sized to fit w x h. alive() says whether the result is still
   // wanted; resolves true once the canvas holds the finished view.
-  function drawView(canvas, pages, w, h, alive, half) {
+  function drawView(canvas, pages, w, h, alive, half, tasks) {
+    function track(t) { if (tasks) tasks.push(t); return t.promise; }
     var pdf = viewerPdf;
     var dpr = window.devicePixelRatio || 1;
     var order = pages.length === 2 && isRtl() ? pages.slice().reverse() : pages;
@@ -4663,7 +4796,7 @@
         var full = document.createElement("canvas");
         full.width = Math.round(hv.width);
         full.height = Math.round(hv.height);
-        return hp.render({ canvasContext: full.getContext("2d"), viewport: hv }).promise.then(function () {
+        return track(hp.render({ canvasContext: full.getContext("2d"), viewport: hv })).then(function () {
           if (!alive()) { full.width = 0; full.height = 0; return false; }
           var halfW = Math.round(full.width / 2);
           var takeLeft = (half === 1) !== isRtl();
@@ -4682,7 +4815,7 @@
         var viewport = page.getViewport({ scale: scale });
         canvas.width = Math.round(viewport.width);
         canvas.height = Math.round(viewport.height);
-        return page.render({ canvasContext: canvas.getContext("2d"), viewport: viewport }).promise.then(function () { return true; });
+        return track(page.render({ canvasContext: canvas.getContext("2d"), viewport: viewport })).then(function () { return true; });
       }
       // Two pages: each into its own scratch canvas, then composed, so a
       // visible canvas never shows a half-drawn spread.
@@ -4699,7 +4832,7 @@
           var tmp = document.createElement("canvas");
           tmp.width = Math.round(vp.width);
           tmp.height = Math.round(vp.height);
-          return pg.render({ canvasContext: tmp.getContext("2d"), viewport: vp }).promise.then(function () { parts.push(tmp); });
+          return track(pg.render({ canvasContext: tmp.getContext("2d"), viewport: vp })).then(function () { parts.push(tmp); });
         });
       });
       return chain.then(function () {
@@ -4761,6 +4894,17 @@
   var pfCache = new Map(); // key -> canvas, most recently used last
   var pfGen = 0;
   var pfBusy = false;
+  var pfTasks = [];          // render tasks of the 先読み in progress
+  var viewerTouching = false, viewerTouchEndAt = 0;
+  // A finger on the page: stop any 先読み drawing right away so the page
+  // follows the finger; it starts again once the reader pauses.
+  function pausePrefetchForTouch() {
+    if (!pfBusy) return;
+    pfGen++;
+    pfBusy = false;
+    pfTasks.forEach(function (t) { try { t.cancel(); } catch (e) {} });
+    pfTasks = [];
+  }
   var pfTimer = null;
   function takePrefetched(key) {
     var c = pfCache.get(key);
@@ -4788,10 +4932,11 @@
   }
   function schedulePrefetch() {
     clearTimeout(pfTimer);
-    pfTimer = setTimeout(runPrefetch, 150);
+    pfTimer = setTimeout(runPrefetch, 400);
   }
   function runPrefetch() {
     if (pfBusy || !viewerPdf || !viewer.classList.contains("open") || viewerTrack.style.display === "none") return;
+    if (viewerTouching || Date.now() - viewerTouchEndAt < 350) { schedulePrefetch(); return; }
     var d = slotDims(viewerSlotMid);
     var pos = nextPos(viewerPageNum, viewerHalf); // already in a slot
     for (var k = 0; k < PF_AHEAD; k++) {
@@ -4803,14 +4948,17 @@
       if (pfCache.has(key)) continue;
       var gen = pfGen, pdf = viewerPdf, canvas = document.createElement("canvas");
       pfBusy = true;
-      drawView(canvas, pages, d.w, d.h, function () { return gen === pfGen && pdf === viewerPdf; }, half).then(function (ok) {
-        if (gen !== pfGen) { canvas.width = 0; canvas.height = 0; return; }
+      pfTasks = [];
+      drawView(canvas, pages, d.w, d.h, function () { return gen === pfGen && pdf === viewerPdf; }, half, pfTasks).then(function (ok) {
+        if (gen !== pfGen) { canvas.width = 0; canvas.height = 0; if (pdf === viewerPdf) schedulePrefetch(); return; }
         pfBusy = false;
+        pfTasks = [];
         if (ok) { storePrefetched(key, canvas); schedulePrefetch(); }
         else { canvas.width = 0; canvas.height = 0; }
       }, function () {
-        if (gen === pfGen) pfBusy = false;
+        if (gen === pfGen) { pfBusy = false; pfTasks = []; }
         canvas.width = 0; canvas.height = 0;
+        if (pdf === viewerPdf) schedulePrefetch(); // e.g. paused by a touch
       });
       return; // one at a time
     }
@@ -5153,6 +5301,8 @@
   }
 
   viewerTrack.addEventListener("touchstart", function (ev) {
+    viewerTouching = true;
+    pausePrefetchForTouch();
     if (ev.touches.length !== 1 || !viewerPdf) { gestureState = GESTURE_IDLE; return; }
     gestureStartX = ev.touches[0].clientX;
     gestureStartY = ev.touches[0].clientY;
@@ -5219,11 +5369,31 @@
     gestureState = GESTURE_IDLE;
     viewerCloseHint.classList.remove("show");
     lastViewerTouchEnd = Date.now();
+    viewerTouching = ev.touches && ev.touches.length > 0;
+    viewerTouchEndAt = Date.now();
+    clearViewerSelection();
   }, { passive: true });
   viewerTrack.addEventListener("touchcancel", function () {
     gestureState = GESTURE_IDLE;
     viewerCloseHint.classList.remove("show");
+    viewerTouching = false;
+    viewerTouchEndAt = Date.now();
   }, { passive: true });
+  // Belt and braces against the blue selection: never start one outside
+  // text fields, and drop any that appears while reading.
+  function clearViewerSelection() {
+    try {
+      var sel = window.getSelection && window.getSelection();
+      if (sel && sel.rangeCount && !(document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))) sel.removeAllRanges();
+    } catch (e) {}
+  }
+  document.addEventListener("selectstart", function (ev) {
+    var t = ev.target;
+    if (t && t.nodeType === 3) t = t.parentNode;
+    if (t && t.closest && t.closest("input, textarea")) return;
+    ev.preventDefault();
+  });
+  viewer.addEventListener("dblclick", function (ev) { ev.preventDefault(); clearViewerSelection(); });
 
   // Mouse click fallback (desktop testing / trackpad use): tap-by-thirds.
   // Guarded against the synthetic click a touchscreen fires right after
@@ -6490,7 +6660,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v42";
+  var APP_VERSION = "v43";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
