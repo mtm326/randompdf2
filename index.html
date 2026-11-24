@@ -1355,11 +1355,37 @@
   .viewer-resume .btn { width: 100%; padding: 14px 18px; }
   /* 続きから読む: the main choice, made larger and easier to hit */
   #viewer-resume-continue { padding: 21px 18px; font-size: 1.12rem; }
+  /* 見開きの調整: kept low so the spread above stays visible */
+  .viewer-shift-panel { bottom: 12px; gap: 8px; padding: 14px 16px; }
+  .viewer-shift-panel .btn { padding: 11px 16px; }
+  .viewer-shift-panel p { font-size: 0.82rem; margin-bottom: 2px; }
+  /* landscape (where spreads are shown): one compact row of buttons */
+  @media (orientation: landscape) {
+    .viewer-shift-panel { flex-direction: row; flex-wrap: wrap; max-width: 760px; padding: 10px 12px; }
+    .viewer-shift-panel p { flex-basis: 100%; margin: 0; }
+    .viewer-shift-panel .btn { width: auto; flex: 1 1 0; padding: 10px 8px; font-size: 0.84rem; white-space: nowrap; }
+  }
   /* ページの表示位置 (settings.pageAlign) */
   .viewer.align-top .viewer-slot { align-items: flex-start; }
   .viewer.align-bottom .viewer-slot { align-items: flex-end; }
   .viewer.align-top .viewer-stage > img { top: calc(max(14px, env(safe-area-inset-top)) + 46px); max-height: calc(100% - max(14px, env(safe-area-inset-top)) - 46px); }
   .viewer.align-bottom .viewer-stage > img { bottom: 0; max-height: calc(100% - max(14px, env(safe-area-inset-top)) - 46px); }
+  /* 上部のバーはタップしたときだけ (settings.hideBars): the page uses the
+     space under the status bar, and the bar slides over it on a tap. A
+     solid strip stays over the status-bar area so iOS doesn't draw its
+     top-edge blur over the page. */
+  .viewer-edge {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: #08090c;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .viewer.bars-auto .viewer-track { padding-top: env(safe-area-inset-top, 0px); }
+  .viewer.bars-auto.align-top .viewer-stage > img { top: env(safe-area-inset-top, 0px); max-height: calc(100% - env(safe-area-inset-top, 0px)); }
+  .viewer.bars-auto.align-bottom .viewer-stage > img { max-height: calc(100% - env(safe-area-inset-top, 0px)); }
+  .viewer-topbar { transition: opacity 0.18s ease, transform 0.18s ease; }
+  .viewer.bars-auto.bars-hidden .viewer-topbar { opacity: 0; transform: translateY(-100%); pointer-events: none; }
   /* shown while an upward swipe has gone far enough to close */
   .viewer-close-hint {
     position: absolute;
@@ -1968,6 +1994,12 @@
   </div>
   <div class="field">
     <div class="field-row">
+      <span class="field-label">読書中の上部バーはタップしたときだけ表示</span>
+      <button class="switch" id="toggle-hide-bars" role="switch" aria-checked="true"></button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
       <span class="field-label">一覧の並び順</span>
     </div>
     <div class="segmented" id="library-sort-toggle" role="group" aria-label="一覧の並び順">
@@ -2058,6 +2090,7 @@
     </button>
     <button class="link-btn" id="viewer-reselect-btn">このPDFだけを選ぶ</button>
   </div>
+  <div class="viewer-edge" aria-hidden="true"></div>
   <div class="viewer-topbar">
     <button class="viewer-close" id="viewer-close" aria-label="閉じる">
       <svg viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -2066,6 +2099,9 @@
     <span class="viewer-page" id="viewer-page"></span>
     <button class="viewer-fav" id="viewer-pages" aria-label="ページ一覧" disabled>
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
+    </button>
+    <button class="viewer-fav" id="viewer-shift" aria-label="見開きの組み合わせを直す" hidden>
+      <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="6" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="3" width="6" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 8h6M9.2 6.2L11 8l-1.8 1.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button class="viewer-fav" id="viewer-open-folder" aria-label="このPDFがあるフォルダを開く" hidden>
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3l1.2 1.6h4.8A1.5 1.5 0 0 1 14 7.1v5.4A1.5 1.5 0 0 1 12.5 14h-9A1.5 1.5 0 0 1 2 12.5v-7z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -2115,6 +2151,13 @@
     <button class="btn btn-primary" id="viewer-next-open">次の巻を開く</button>
     <button class="btn btn-copyname" id="viewer-next-folder">フォルダを開く</button>
     <button class="btn btn-copyname" id="viewer-next-stay">このまま</button>
+  </div>
+  <div class="viewer-resume viewer-shift-panel" id="viewer-shift-panel" role="dialog" aria-label="見開きの組み合わせを直す">
+    <p id="viewer-shift-text">見開きの組み合わせを1ページずらします</p>
+    <button class="btn btn-primary" id="viewer-shift-book">この本全体をずらす</button>
+    <button class="btn btn-copyname" id="viewer-shift-here">このページから後ろだけずらす</button>
+    <button class="btn btn-copyname" id="viewer-shift-reset">調整を元に戻す</button>
+    <button class="btn btn-copyname" id="viewer-shift-close">閉じる</button>
   </div>
   <div class="viewer-slider" id="viewer-slider">
     <div class="viewer-slider-label" id="viewer-slider-label"></div>
@@ -4158,6 +4201,7 @@
     syncViewerOptsUI();
     syncLockUI();
     $("toggle-keep-awake").setAttribute("aria-checked", settings.keepAwake === false ? "false" : "true");
+    $("toggle-hide-bars").setAttribute("aria-checked", settings.hideBars === false ? "false" : "true");
     applyPageAlign();
     syncCloseSwipeUI();
     $("toggle-split-wide").setAttribute("aria-checked", settings.splitWide === false ? "false" : "true");
@@ -4408,16 +4452,43 @@
     return window.innerWidth > window.innerHeight && window.innerWidth >= 480;
   }
   function coverAlone() { return settings.spreadCoverAlone !== false; }
+  // 見開きの調整 (per book, fixed while reading): spreadCover overrides the
+  // 表紙単独 setting for this book (= shifts the whole book by one page),
+  // spreadBreaks lists pages that must start a spread (the page before
+  // them is shown alone, so everything after shifts by one page).
+  function bookCoverAlone() {
+    var r = viewerRecord;
+    return r && typeof r.spreadCover === "boolean" ? r.spreadCover : coverAlone();
+  }
+  function bookBreaks() {
+    var r = viewerRecord;
+    return r && Array.isArray(r.spreadBreaks) ? r.spreadBreaks : [];
+  }
+  var viewMap = null, viewMapKey = "";
+  function getViewMap() { // page -> first page of the spread it belongs to
+    var br = bookBreaks();
+    var key = viewerPageCount + "|" + bookCoverAlone() + "|" + br.join(",");
+    if (viewMap && key === viewMapKey) return viewMap;
+    var starts = {};
+    if (bookCoverAlone()) starts[2] = true;
+    br.forEach(function (b) { starts[b] = true; });
+    var m = new Array(viewerPageCount + 2);
+    var p = 1;
+    while (p <= viewerPageCount) {
+      m[p] = p;
+      if (p + 1 <= viewerPageCount && !starts[p + 1]) { m[p + 1] = p; p += 2; } else p += 1;
+    }
+    viewMap = m; viewMapKey = key;
+    return m;
+  }
   function viewStart(p) {
-    if (!viewerSpread) return p;
-    if (coverAlone()) return p <= 1 ? 1 : (p % 2 === 0 ? p : p - 1);
-    return p % 2 === 1 ? p : p - 1;
+    if (!viewerSpread || p < 1 || p > viewerPageCount) return p;
+    return getViewMap()[p] || p;
   }
   function viewPages(s) {
     if (s < 1 || s > viewerPageCount) return [];
     if (!viewerSpread) return [s];
-    if (coverAlone() && s === 1) return [1];
-    return s + 1 <= viewerPageCount ? [s, s + 1] : [s];
+    return s + 1 <= viewerPageCount && getViewMap()[s + 1] === s ? [s, s + 1] : [s];
   }
   function viewEnd(s) { var v = viewPages(s); return v.length ? v[v.length - 1] : s; }
   function nextViewStart(s) { return s + Math.max(1, viewPages(s).length); }
@@ -4480,6 +4551,8 @@
 
   function openViewer(record) {
     viewerRecord = record;
+    barsAtOpen = true;
+    updateBars();
     var lo = {};
     var prevLo = settings.lastOpened || {};
     Object.keys(prevLo).forEach(function (k) { lo[k] = prevLo[k]; });
@@ -5003,6 +5076,9 @@
   var rememberAfterSync = false;
   function syncViewerTrack(showSpinner) {
     viewerSpread = spreadOn();
+    viewerLayoutSeen = viewerLayoutKey();
+    viewerShiftBtn.hidden = !viewerSpread || viewerPageCount < 3;
+    if (viewerShiftBtn.hidden) hideShiftPanel();
     viewerPageNum = viewStart(Math.max(1, Math.min(viewerPageCount, viewerPageNum)));
     updateViewerStageWidth();
     viewerTrack.style.transition = "none";
@@ -5056,6 +5132,7 @@
   // right slot holds the next page or the previous one (see renderAllSlots).
   function commitTurn(dir) {
     hideNextPrompt();
+    if (barsAtOpen) { barsAtOpen = false; updateBars(); }
     animateTrackTo(dir === -1 ? -viewerStageWidth : viewerStageWidth, function () {
       rotateCanvases(dir);
       var revealedRight = dir === -1;
@@ -5126,12 +5203,25 @@
     viewerSliderLabel.textContent = pageNum + " / " + viewerPageCount;
   }
 
+  // The top bar follows the page slider (a tap in the middle shows both),
+  // and is also shown right after opening until the first page turn.
+  var barsAtOpen = false;
+  function barsAuto() { return settings.hideBars !== false; }
+  function updateBars() {
+    viewer.classList.toggle("bars-auto", barsAuto());
+    var shiftOpen = !!document.getElementById("viewer-shift-panel") && document.getElementById("viewer-shift-panel").classList.contains("show");
+    viewer.classList.toggle("bars-hidden", !(sliderOpen || barsAtOpen || shiftOpen));
+  }
   function openSlider() {
-    if (!viewerPdf || viewerPageCount <= 1) return;
+    if (!viewerPdf) return;
+    barsAtOpen = false;
     sliderOpen = true;
-    setSliderVisual(viewerPageNum);
-    viewerSlider.classList.add("show");
-    viewerBottombar.classList.add("dim");
+    if (viewerPageCount > 1) {
+      setSliderVisual(viewerPageNum);
+      viewerSlider.classList.add("show");
+      viewerBottombar.classList.add("dim");
+    }
+    updateBars();
   }
   function closeSlider() {
     sliderOpen = false;
@@ -5139,6 +5229,7 @@
     viewerSlider.classList.remove("show");
     viewerSliderPreview.classList.remove("show");
     viewerBottombar.classList.remove("dim");
+    updateBars();
   }
   function toggleSlider() {
     if (sliderOpen) closeSlider(); else openSlider();
@@ -5287,6 +5378,7 @@
   function handleViewerTap(touch) {
     if (!touch || !viewerPdf) return;
     if (viewerNext.classList.contains("show")) { hideNextPrompt(); return; }
+    if (viewerShiftPanel.classList.contains("show")) { hideShiftPanel(); return; }
     // Use the middle slot's rect, not the track's own — the track is 3
     // slots (300%) wide and shifted by transform, so its bounding rect
     // does not correspond to what's actually visible on screen.
@@ -5451,6 +5543,68 @@
     nextVolume = null;
   }
   viewerNextStay.addEventListener("click", hideNextPrompt);
+
+  // 見開きの組み合わせを直す (top-bar button, shown only in spread mode)
+  var viewerShiftBtn = $("viewer-shift");
+  var viewerShiftPanel = $("viewer-shift-panel");
+  var viewerShiftText = $("viewer-shift-text");
+  var viewerShiftHere = $("viewer-shift-here");
+  var viewerShiftReset = $("viewer-shift-reset");
+  function bookHasShift(r) { return !!r && (typeof r.spreadCover === "boolean" || (Array.isArray(r.spreadBreaks) && r.spreadBreaks.length > 0)); }
+  function syncShiftPanel() {
+    var r = viewerRecord;
+    var here = viewPages(viewerPageNum);
+    var undoHere = here.length === 1 && bookBreaks().indexOf(viewerPageNum + 1) !== -1;
+    viewerShiftText.textContent = "表示中 " + pageLabelText().replace(/ \/ .*/, "") + "ページ：見開きの組み合わせを1ページずらします（もう一度押すと元に戻ります）";
+    viewerShiftHere.textContent = undoHere ? "ここでのずらしを取り消す" : "このページから後ろだけずらす";
+    viewerShiftHere.hidden = !undoHere && (here.length < 2 || viewerPageNum + 1 >= viewerPageCount);
+    viewerShiftReset.hidden = !bookHasShift(r);
+  }
+  function showShiftPanel() {
+    if (!viewerPdf || !viewerSpread) return;
+    hideNextPrompt();
+    closeSlider();
+    syncShiftPanel();
+    viewerShiftPanel.classList.add("show");
+    updateBars();
+  }
+  function hideShiftPanel() { viewerShiftPanel.classList.remove("show"); updateBars(); }
+  function applyShift(change) {
+    var r = viewerRecord;
+    if (!r || !viewerPdf) return;
+    var first = viewerPageNum;
+    change(r);
+    if (Array.isArray(r.spreadBreaks)) {
+      r.spreadBreaks = r.spreadBreaks.filter(function (b, i, a) { return b > 1 && a.indexOf(b) === i; }).sort(function (a, b) { return a - b; });
+      if (!r.spreadBreaks.length) delete r.spreadBreaks;
+    }
+    if (typeof r.spreadCover === "boolean" && r.spreadCover === coverAlone()) delete r.spreadCover;
+    if (covers.indexOf(r) !== -1) idbPut("covers", r);
+    viewerPageNum = first;
+    rememberAfterSync = true;
+    syncViewerTrack(false);
+    syncViewerOptsUI();
+    syncShiftPanel();
+  }
+  viewerShiftBtn.addEventListener("click", function () {
+    if (viewerShiftPanel.classList.contains("show")) hideShiftPanel(); else showShiftPanel();
+  });
+  $("viewer-shift-close").addEventListener("click", hideShiftPanel);
+  $("viewer-shift-book").addEventListener("click", function () {
+    applyShift(function (r) { r.spreadCover = !bookCoverAlone(); });
+  });
+  viewerShiftHere.addEventListener("click", function () {
+    var s = viewerPageNum;
+    applyShift(function (r) {
+      var br = Array.isArray(r.spreadBreaks) ? r.spreadBreaks.slice() : [];
+      var i = br.indexOf(s + 1);
+      if (i !== -1) br.splice(i, 1); else br.push(s + 1);
+      r.spreadBreaks = br;
+    });
+  });
+  viewerShiftReset.addEventListener("click", function () {
+    applyShift(function (r) { delete r.spreadCover; delete r.spreadBreaks; });
+  });
   viewerNextFolder.addEventListener("click", function () {
     var rec = viewerRecord;
     hideNextPrompt();
@@ -5517,6 +5671,14 @@
   });
   Object.keys(closeSwipeBtns).forEach(function (k) {
     closeSwipeBtns[k].addEventListener("click", function () { saveSetting("closeSwipe", k); syncCloseSwipeUI(); });
+  });
+  var toggleHideBars = $("toggle-hide-bars");
+  toggleHideBars.addEventListener("click", function () {
+    var v = !barsAuto();
+    saveSetting("hideBars", v);
+    toggleHideBars.setAttribute("aria-checked", v ? "true" : "false");
+    updateBars();
+    resyncOpenViewer(); // the page area changes size
   });
   var toggleKeepAwake = $("toggle-keep-awake");
   toggleKeepAwake.addEventListener("click", function () {
@@ -5666,11 +5828,16 @@
   });
   plDirLtr.addEventListener("click", function () { setDirection("ltr"); });
   plDirRtl.addEventListener("click", function () { setDirection("rtl"); });
-  plCoverAlone.addEventListener("click", function () { setCoverAlone(!coverAlone()); });
+  plCoverAlone.addEventListener("click", function () {
+    var r = viewerRecord, v = !bookCoverAlone();
+    if (r && typeof r.spreadCover === "boolean") { delete r.spreadCover; if (covers.indexOf(r) !== -1) idbPut("covers", r); }
+    setCoverAlone(v);
+  });
 
   function closeViewer() {
     teardownPageList();
     hideNextPrompt();
+    hideShiftPanel();
     clearPrefetch();
     releaseWakeLock();
     var closedRecord = viewerRecord;
@@ -5721,9 +5888,36 @@
     toggleFavorite(viewerRecord.id);
   });
 
+  // iPadOS takes app-switcher snapshots in both orientations when the app
+  // goes to the home screen, firing resize events while the page is hidden;
+  // the last one (back to the real size) can be missed or report a stale
+  // size, leaving a landscape screen laid out as portrait (one page shown
+  // in the space of a spread). The layout is therefore remembered and
+  // re-checked on return, a few times while the size settles.
+  var viewerLayoutSeen = "";
+  function viewerLayoutKey() {
+    var st = viewerTrack.parentElement;
+    return window.innerWidth + "x" + window.innerHeight + "|" + (st ? st.clientWidth + "x" + st.clientHeight : "") + "|" + spreadOn();
+  }
+  function viewerShowing() { return viewer.classList.contains("open") && viewerPdf && viewerTrack.style.display !== "none"; }
+  function recheckViewerLayout() {
+    if (!viewerShowing() || document.hidden) return;
+    if (viewerLayoutKey() !== viewerLayoutSeen) syncViewerTrack(false);
+  }
+  var layoutChecks = [];
+  function recheckViewerLayoutSoon() {
+    layoutChecks.forEach(clearTimeout);
+    layoutChecks = [0, 250, 700, 1500].map(function (ms) { return setTimeout(recheckViewerLayout, ms); });
+  }
   window.addEventListener("resize", function () {
-    if (viewer.classList.contains("open") && viewerPdf && viewerTrack.style.display !== "none") syncViewerTrack(false);
+    if (!viewerShowing() || document.hidden) return; // re-checked on return
+    syncViewerTrack(false);
+    recheckViewerLayoutSoon();
   });
+  window.addEventListener("orientationchange", recheckViewerLayoutSoon);
+  window.addEventListener("pageshow", recheckViewerLayoutSoon);
+  window.addEventListener("focus", recheckViewerLayoutSoon);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) recheckViewerLayoutSoon(); });
 
   // ---------------------------------------------------------------
   // 長押しメニュー: press and hold a cover in the library for quick actions
@@ -6096,7 +6290,7 @@
     });
     var ca = coverAlone() ? "true" : "false";
     toggleCoverAlone.setAttribute("aria-checked", ca);
-    plCoverAlone.setAttribute("aria-checked", ca);
+    plCoverAlone.setAttribute("aria-checked", viewer.classList.contains("open") && viewerRecord ? (bookCoverAlone() ? "true" : "false") : ca);
     plDirLtr.setAttribute("aria-pressed", isRtl() ? "false" : "true");
     plDirRtl.setAttribute("aria-pressed", isRtl() ? "true" : "false");
   }
@@ -6660,7 +6854,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v43";
+  var APP_VERSION = "v45";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
