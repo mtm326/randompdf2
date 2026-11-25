@@ -117,6 +117,29 @@
     pointer-events: none;
   }
 
+  /* iOS/iPadOS 26 top-edge blur. In a home-screen web app WebKit draws a
+     blur at the top unless it finds a fixed element there: hit-tested a
+     few px below the top edge, at least 90% of the width and more than
+     10px tall, with a background colour. The edge-cover above is only as
+     tall as the status-bar inset, which is 0 now that the status bar is
+     opaque (and in iPad windows), so this band does the job: 12px, always
+     on top, its colour readable by WebKit but painted invisibly
+     (background-clip: text with no text). Home-screen app only. */
+  .top-edge-band { display: none; }
+  html.standalone .top-edge-band { display: block; }
+  @media (display-mode: standalone) { .top-edge-band { display: block; } }
+  .top-edge-band {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 12px;
+    z-index: 2147483646;
+    background-color: var(--bg);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  html.reading .top-edge-band { background-color: #08090c; }
+
   /* Black screen for the iOS app switcher (best effort; see JS). */
   .privacy-cover {
     position: fixed; inset: 0;
@@ -1672,7 +1695,11 @@
 </head>
 <body>
 
+<div class="top-edge-band" aria-hidden="true"></div>
 <div class="edge-cover" aria-hidden="true"></div>
+<script>
+  try { if (navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches)) document.documentElement.classList.add("standalone"); } catch (e) {}
+</script>
 <div class="privacy-cover" id="privacy-cover" aria-hidden="true"></div>
 <div class="lock" id="lock" role="dialog" aria-modal="true" aria-label="パスコードロック">
   <div class="lock-inner">
@@ -4374,6 +4401,7 @@
     exitSelectMode();
     dealWall();
     wall.classList.add("open");
+    document.documentElement.classList.add("reading");
 
     wallHint.classList.remove("hide");
     clearTimeout(wallHintTimer);
@@ -4382,6 +4410,7 @@
 
   function stopWall() {
     wall.classList.remove("open");
+    document.documentElement.classList.toggle("reading", viewer.classList.contains("open"));
   }
 
   wallReshuffleBtn.addEventListener("click", function () {
@@ -4551,6 +4580,7 @@
 
   function openViewer(record) {
     viewerRecord = record;
+    document.documentElement.classList.add("reading");
     barsAtOpen = true;
     updateBars();
     var lo = {};
@@ -5844,6 +5874,7 @@
     flushPageSave();
     viewerResume.classList.remove("show");
     viewer.classList.remove("open");
+    document.documentElement.classList.toggle("reading", wall.classList.contains("open"));
     if (viewerPdf) { try { viewerPdf.destroy(); } catch (e) {} }
     viewerPdf = null;
     viewerRenderGen++;
@@ -6854,7 +6885,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v47";
+  var APP_VERSION = "v48";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
