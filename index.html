@@ -104,14 +104,14 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
-    padding: max(20px, env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+    padding: max(20px, var(--top-inset)) 20px calc(24px + env(safe-area-inset-bottom));
   }
 
   /* Fixed solid strip under the status bar (see .viewer-topbar for why). */
   .edge-cover {
     position: fixed;
     top: 0; left: 0; right: 0;
-    height: max(8px, env(safe-area-inset-top));
+    height: max(8px, var(--top-inset));
     background: var(--bg);
     z-index: 30;
     pointer-events: none;
@@ -125,6 +125,13 @@
      opaque (and in iPad windows), so this band does the job: 12px, always
      on top, its colour readable by WebKit but painted invisibly
      (background-clip: text with no text). Home-screen app only. */
+  /* --edge-ramp: in the home-screen app the page starts this much lower and
+     the strip above it is a solid colour (edge-cover / the viewer's top bar),
+     so the system blur only ever lands on a plain area. Height is set in
+     設定 (settings.edgeRamp → --edge-ramp-user). */
+  :root { --edge-ramp: 0px; --top-inset: calc(env(safe-area-inset-top, 0px) + var(--edge-ramp)); }
+  html.standalone { --edge-ramp: var(--edge-ramp-user, 32px); }
+  @media (display-mode: standalone) { :root { --edge-ramp: var(--edge-ramp-user, 32px); } }
   .top-edge-band { display: none; }
   html.standalone .top-edge-band { display: block; }
   @media (display-mode: standalone) { .top-edge-band { display: block; } }
@@ -162,7 +169,7 @@
   .lock-inner {
     width: 100%;
     max-width: 340px;
-    padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+    padding: max(24px, var(--top-inset)) 24px max(24px, env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1076,7 +1083,7 @@
     grid-auto-rows: 1fr;
     gap: 3px;
     padding: 3px;
-    padding-top: calc(max(14px, env(safe-area-inset-top)) + 45px);
+    padding-top: calc(max(14px, var(--top-inset)) + 45px);
   }
   .wall-tile {
     position: relative;
@@ -1143,7 +1150,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding: max(14px, env(safe-area-inset-top)) 14px 8px;
+    padding: max(14px, var(--top-inset)) 14px 8px;
     background: #08090c;
     z-index: 3;
     pointer-events: none;
@@ -1241,7 +1248,7 @@
     display: flex;
     width: 300%;
     height: 100%;
-    padding-top: calc(max(14px, env(safe-area-inset-top)) + 46px);
+    padding-top: calc(max(14px, var(--top-inset)) + 46px);
     touch-action: none;
   }
   .viewer-slot {
@@ -1267,7 +1274,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: max(14px, env(safe-area-inset-top)) 14px 10px;
+    padding: max(14px, var(--top-inset)) 14px 10px;
     background: #08090c;
     z-index: 3;
   }
@@ -1391,20 +1398,20 @@
   /* ページの表示位置 (settings.pageAlign) */
   .viewer.align-top .viewer-slot { align-items: flex-start; }
   .viewer.align-bottom .viewer-slot { align-items: flex-end; }
-  .viewer.align-top .viewer-stage > img { top: calc(max(14px, env(safe-area-inset-top)) + 46px); max-height: calc(100% - max(14px, env(safe-area-inset-top)) - 46px); }
-  .viewer.align-bottom .viewer-stage > img { bottom: 0; max-height: calc(100% - max(14px, env(safe-area-inset-top)) - 46px); }
+  .viewer.align-top .viewer-stage > img { top: calc(max(14px, var(--top-inset)) + 46px); max-height: calc(100% - max(14px, var(--top-inset)) - 46px); }
+  .viewer.align-bottom .viewer-stage > img { bottom: 0; max-height: calc(100% - max(14px, var(--top-inset)) - 46px); }
   /* 上部のバーはタップしたときだけ (settings.hideBars): the page starts
      just under the status bar, and the full bar is drawn over it on a tap.
      When hidden, the bar itself stays in place as a solid strip over the
      status-bar area (fixed, full width, opaque, never transparent or moved
      away) -- iOS 26 draws its blur ("scroll edge effect") at the top of a
      home-screen web app unless such an element is there. */
-  .viewer.bars-auto .viewer-track { padding-top: max(8px, env(safe-area-inset-top, 0px)); }
-  .viewer.bars-auto.align-top .viewer-stage > img { top: max(8px, env(safe-area-inset-top, 0px)); max-height: calc(100% - max(8px, env(safe-area-inset-top, 0px))); }
-  .viewer.bars-auto.align-bottom .viewer-stage > img { max-height: calc(100% - max(8px, env(safe-area-inset-top, 0px))); }
+  .viewer.bars-auto .viewer-track { padding-top: max(8px, var(--top-inset)); }
+  .viewer.bars-auto.align-top .viewer-stage > img { top: max(8px, var(--top-inset)); max-height: calc(100% - max(8px, var(--top-inset))); }
+  .viewer.bars-auto.align-bottom .viewer-stage > img { max-height: calc(100% - max(8px, var(--top-inset))); }
   .viewer-topbar > * { transition: opacity 0.15s ease; }
   .viewer.bars-auto.bars-hidden .viewer-topbar {
-    height: max(8px, env(safe-area-inset-top, 0px));
+    height: max(8px, var(--top-inset));
     padding-top: 0; padding-bottom: 0;
     overflow: hidden;
     pointer-events: none;
@@ -1628,7 +1635,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: max(14px, env(safe-area-inset-top)) 14px 10px;
+    padding: max(14px, var(--top-inset)) 14px 10px;
     background: #08090c;
   }
   .pagelist-title { flex: 1; color: #fff; font-size: 0.9rem; font-weight: 600; }
@@ -1637,9 +1644,9 @@
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    padding: calc(max(14px, env(safe-area-inset-top)) + 56px) 14px max(24px, env(safe-area-inset-bottom));
+    padding: calc(max(14px, var(--top-inset)) + 56px) 14px max(24px, env(safe-area-inset-bottom));
     /* keep scrollIntoView targets clear of the fixed header */
-    scroll-padding-top: calc(max(14px, env(safe-area-inset-top)) + 64px);
+    scroll-padding-top: calc(max(14px, var(--top-inset)) + 64px);
   }
   .pagelist-opts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
   .pagelist-opt {
@@ -2025,6 +2032,18 @@
       <span class="field-label">読書中の上部バーはタップしたときだけ表示</span>
       <button class="switch" id="toggle-hide-bars" role="switch" aria-checked="true"></button>
     </div>
+  </div>
+  <div class="field">
+    <div class="field-row">
+      <span class="field-label">画面上端の余白（ぼやけ対策）</span>
+    </div>
+    <div class="segmented" role="group" aria-label="画面上端の余白">
+      <button type="button" id="edge-ramp-0" aria-pressed="false">なし</button>
+      <button type="button" id="edge-ramp-24" aria-pressed="false">小</button>
+      <button type="button" id="edge-ramp-32" aria-pressed="true">標準</button>
+      <button type="button" id="edge-ramp-48" aria-pressed="false">大</button>
+    </div>
+    <div class="field-help">ホーム画面から開いたとき、iPhone・iPad が画面の上端をぼかします。その範囲を無地の余白にして、ページや一覧にぼかしが重ならないようにします。まだぼやける場合は「大」にしてください。</div>
   </div>
   <div class="field">
     <div class="field-row">
@@ -4230,6 +4249,7 @@
     $("toggle-keep-awake").setAttribute("aria-checked", settings.keepAwake === false ? "false" : "true");
     $("toggle-hide-bars").setAttribute("aria-checked", settings.hideBars === false ? "false" : "true");
     applyPageAlign();
+    applyEdgeRamp();
     syncCloseSwipeUI();
     $("toggle-split-wide").setAttribute("aria-checked", settings.splitWide === false ? "false" : "true");
     shuffleMinutesRange.value = settings.shuffleMinutes;
@@ -5702,6 +5722,16 @@
   Object.keys(closeSwipeBtns).forEach(function (k) {
     closeSwipeBtns[k].addEventListener("click", function () { saveSetting("closeSwipe", k); syncCloseSwipeUI(); });
   });
+  var edgeRampBtns = { 0: $("edge-ramp-0"), 24: $("edge-ramp-24"), 32: $("edge-ramp-32"), 48: $("edge-ramp-48") };
+  function edgeRampPx() { var v = settings.edgeRamp; return v === 0 || v === 24 || v === 32 || v === 48 ? v : 32; }
+  function applyEdgeRamp() {
+    var v = edgeRampPx();
+    try { document.documentElement.style.setProperty("--edge-ramp-user", v + "px"); } catch (e) {}
+    Object.keys(edgeRampBtns).forEach(function (k) { edgeRampBtns[k].setAttribute("aria-pressed", String(v) === k ? "true" : "false"); });
+  }
+  Object.keys(edgeRampBtns).forEach(function (k) {
+    edgeRampBtns[k].addEventListener("click", function () { saveSetting("edgeRamp", Number(k)); applyEdgeRamp(); resyncOpenViewer(); });
+  });
   var toggleHideBars = $("toggle-hide-bars");
   toggleHideBars.addEventListener("click", function () {
     var v = !barsAuto();
@@ -6885,7 +6915,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v48";
+  var APP_VERSION = "v49";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
