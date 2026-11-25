@@ -150,6 +150,11 @@
     color: transparent;
   }
   html.reading .top-edge-band { background-color: #08090c; }
+  /* While reading (viewer / random wall), the page behind is taken out and
+     nothing can scroll: iPadOS draws its top-edge haze when the home-screen
+     app's page is scrollable. The library comes back at the same place. */
+  html.reading-locked, html.reading-locked body { overflow: hidden !important; height: 100%; }
+  html.reading-locked #app { display: none; }
 
   /* Black screen for the iOS app switcher (best effort; see JS). */
   .privacy-cover {
@@ -4425,7 +4430,7 @@
     exitSelectMode();
     dealWall();
     wall.classList.add("open");
-    document.documentElement.classList.add("reading");
+    setReading(true);
 
     wallHint.classList.remove("hide");
     clearTimeout(wallHintTimer);
@@ -4434,7 +4439,7 @@
 
   function stopWall() {
     wall.classList.remove("open");
-    document.documentElement.classList.toggle("reading", viewer.classList.contains("open"));
+    setReading(viewer.classList.contains("open"));
   }
 
   wallReshuffleBtn.addEventListener("click", function () {
@@ -4602,9 +4607,24 @@
     return (v.length === 2 ? v[0] + "-" + v[1] : viewerPageNum + half) + " / " + viewerPageCount;
   }
 
+  var readingScrollY = 0, readingTimer = null;
+  function setReading(on) {
+    var root = document.documentElement;
+    clearTimeout(readingTimer);
+    if (on) {
+      if (!root.classList.contains("reading")) readingScrollY = window.scrollY || window.pageYOffset || 0;
+      root.classList.add("reading");
+      // after the viewer/wall has faded in, so the fade never shows a blank page
+      readingTimer = setTimeout(function () { if (root.classList.contains("reading")) root.classList.add("reading-locked"); }, 260);
+    } else {
+      var wasLocked = root.classList.contains("reading-locked");
+      root.classList.remove("reading", "reading-locked");
+      if (wasLocked) window.scrollTo(0, readingScrollY);
+    }
+  }
   function openViewer(record) {
     viewerRecord = record;
-    document.documentElement.classList.add("reading");
+    setReading(true);
     barsAtOpen = true;
     updateBars();
     var lo = {};
@@ -5911,7 +5931,7 @@
     flushPageSave();
     viewerResume.classList.remove("show");
     viewer.classList.remove("open");
-    document.documentElement.classList.toggle("reading", wall.classList.contains("open"));
+    setReading(wall.classList.contains("open"));
     if (viewerPdf) { try { viewerPdf.destroy(); } catch (e) {} }
     viewerPdf = null;
     viewerRenderGen++;
@@ -6922,7 +6942,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v50";
+  var APP_VERSION = "v51";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
