@@ -132,6 +132,10 @@
   :root { --edge-ramp: 0px; --top-inset: calc(env(safe-area-inset-top, 0px) + var(--edge-ramp)); }
   html.standalone { --edge-ramp: var(--edge-ramp-user, 32px); }
   @media (display-mode: standalone) { :root { --edge-ramp: var(--edge-ramp-user, 32px); } }
+  /* landscape: the blur reaches a little further down, so add a bit more
+     (--edge-ramp-land is 0 when 余白 is set to なし) */
+  @media (orientation: landscape) { html.standalone { --edge-ramp: calc(var(--edge-ramp-user, 32px) + var(--edge-ramp-land, 16px)); } }
+  @media (display-mode: standalone) and (orientation: landscape) { :root { --edge-ramp: calc(var(--edge-ramp-user, 32px) + var(--edge-ramp-land, 16px)); } }
   .top-edge-band { display: none; }
   html.standalone .top-edge-band { display: block; }
   @media (display-mode: standalone) { .top-edge-band { display: block; } }
@@ -2043,7 +2047,7 @@
       <button type="button" id="edge-ramp-32" aria-pressed="true">標準</button>
       <button type="button" id="edge-ramp-48" aria-pressed="false">大</button>
     </div>
-    <div class="field-help">ホーム画面から開いたとき、iPhone・iPad が画面の上端をぼかします。その範囲を無地の余白にして、ページや一覧にぼかしが重ならないようにします。まだぼやける場合は「大」にしてください。</div>
+    <div class="field-help">ホーム画面から開いたとき、iPhone・iPad が画面の上端をぼかします。その範囲を無地の余白にして、ページや一覧にぼかしが重ならないようにします（横向きのときは少し広めにします）。まだぼやける場合は「大」にしてください。</div>
   </div>
   <div class="field">
     <div class="field-row">
@@ -5726,7 +5730,10 @@
   function edgeRampPx() { var v = settings.edgeRamp; return v === 0 || v === 24 || v === 32 || v === 48 ? v : 32; }
   function applyEdgeRamp() {
     var v = edgeRampPx();
-    try { document.documentElement.style.setProperty("--edge-ramp-user", v + "px"); } catch (e) {}
+    try {
+      document.documentElement.style.setProperty("--edge-ramp-user", v + "px");
+      document.documentElement.style.setProperty("--edge-ramp-land", (v ? 16 : 0) + "px");
+    } catch (e) {}
     Object.keys(edgeRampBtns).forEach(function (k) { edgeRampBtns[k].setAttribute("aria-pressed", String(v) === k ? "true" : "false"); });
   }
   Object.keys(edgeRampBtns).forEach(function (k) {
@@ -6915,7 +6922,7 @@
   // manifest link) registers sw.js, which keeps the app itself available
   // without a connection. The Artifact copy (inside an iframe) never does.
   // ---------------------------------------------------------------
-  var APP_VERSION = "v49";
+  var APP_VERSION = "v50";
   var swState = "unsupported"; // unsupported | pending | missing | active
   function offlineCapable() {
     return "serviceWorker" in navigator && isTopLevel && !!document.querySelector('link[rel="manifest"]') &&
